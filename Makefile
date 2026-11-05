@@ -105,13 +105,15 @@ $(BUILD)/arcfw.exe: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
 #
 #     make floppy ISO=/path/to/nt4-ppc.iso
 #
-# Builds the HAL and the ADB driver first, then takes the one file it cannot
-# ship -- Microsoft's ARC veneer -- off the image you name, patches it twice,
-# and lays out build/boot-floppy.img.  SETUPLDR and the Cirrus display pair
-# stay on the CD, where the veneer and Setup load them.
+# Builds the HAL, the ADB driver and the ARC firmware first, then takes the one
+# file it cannot ship -- Microsoft's ARC veneer, for the install boot -- off
+# the image you name, patches it, and lays out build/boot-floppy.img.  The
+# installed system boots through this project's own firmware (src/arcfw).
+# SETUPLDR and the Cirrus display pair stay on the CD, where the veneer and
+# Setup load them.
 #
-# The result CANNOT BE REDISTRIBUTED: two of its eight files are that veneer,
-# both modified.  See PROVENANCE.md.
+# The result CANNOT BE REDISTRIBUTED: one of its eight files is that veneer,
+# modified.  See PROVENANCE.md.
 floppy: all
 	@test -n "$(ISO)" || { \
 	  echo 'make floppy needs your CD image:'; \
