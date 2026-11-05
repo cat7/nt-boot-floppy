@@ -40,6 +40,18 @@ static VOID type_range(ULONG base, ULONG count, MEMORY_TYPE deflt)
         ULONG end = base + count, cut = end;
         MEMORY_TYPE t = deflt;
         if (base < 0xA) { t = MemoryFirmwarePermanent; cut = 0xA < end ? 0xA : end; }
+        else if (base >= ARC_KSEG0_PAGES && deflt == MemoryFree) {
+            /* The loader takes its heap and stack from a free descriptor through KSEG0 addresses,
+             * and KSEG0 is mapped for 8 MB: a free page above it is a DSI in RtlZeroMemory
+             * (OSLOADER at 0x80611B58, 5 November).  The veneer called the rest firmware-
+             * temporary too; the kernel reclaims that type once it has its own page tables. */
+            t = MemoryFirmwareTemporary;
+        }
+        else if (deflt == MemoryFree && end > ARC_KSEG0_PAGES && base < ARC_KSEG0_PAGES) {
+            cut = ARC_KSEG0_PAGES;
+            if (loaded_base > base && loaded_base < cut) cut = loaded_base;
+            if (base >= loaded_base && base < loaded_base + loaded_pages) { t = MemoryLoadedProgram; cut = loaded_base + loaded_pages < cut ? loaded_base + loaded_pages : cut; }
+        }
         else if (base >= loaded_base && base < loaded_base + loaded_pages) {
             t = MemoryLoadedProgram; cut = loaded_base + loaded_pages < end ? loaded_base + loaded_pages : end;
         } else {
