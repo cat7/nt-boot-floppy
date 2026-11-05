@@ -136,8 +136,14 @@ jobs:
           path: site/download
       - name: The page
         run: python3 tools/mkpages.py --version "${{ needs.build.outputs.version }}" --out site
+      # The artifact is named per attempt: a re-run of this job after a failed deployment
+      # (Pages not enabled yet, or its environment rule not allowing tags) uploads again, and
+      # deploy-pages refuses a run holding two artifacts of one name (v1.0, attempt 3).
       - uses: actions/upload-pages-artifact@v3
         with:
+          name: github-pages-${{ github.run_attempt }}
           path: site
       - id: deploy
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
