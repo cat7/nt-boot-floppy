@@ -187,9 +187,12 @@ driver = d1, i8042prt.sys, i8042prt
 [Config.i8042prt]
 """
 
-# The display class exists for one reason: ledger row 6.  cirrus.sys claims the legacy VGA
-# aperture, which is RAM on this board, VideoPortVerifyAccessRanges reports the conflict, and
-# Setup dies initialising video (wall 25).
+# The display class existed for one reason: ledger row 6.  cirrus.sys claims the legacy VGA
+# aperture at 0xA0000, the HAL refused to translate it (RAM, on this board), and Setup died
+# initialising video (wall 25); the fix was a copy of cirrus.sys with the claim moved, which only
+# an OEM disk could deliver.  Since 5 November 2026 the HAL translates 0xA0000 onto the 54M30's
+# legacy-window mirror and the stock cirrus.sys on the CD works, so mkfloppy.py no longer puts
+# the pair on the disk.  The options stay for anyone who wants to try another miniport.
 #
 # There is exactly one `driver =` line because SETUPLDR loads exactly one image per OEM class --
 # SlInit calls SlLoadOemDriver once after SlPromptOemVideo -- and it takes the *first* file key
@@ -611,6 +614,7 @@ def main():
     ap.add_argument('--display-driver', help='the display miniport, installed as CIRRUS.SYS')
     ap.add_argument('--display-dll', help='the display DLL, installed as CIRRUS.DLL')
     ap.add_argument('--vga-aperture', type=lambda x: int(x, 0), metavar='ADDR', default=None,
+                    # ledger row 6, retired: the HAL translates the real 0xA0000 now
                     help='ledger row 6: move the display miniport\'s legacy-VGA-aperture claim '
                          'from 0xA0000 to ADDR, which must be at or above 0x80000000 — see '
                          'move_vga_aperture(). 0x90000000 is what this project uses')

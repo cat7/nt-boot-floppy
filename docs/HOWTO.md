@@ -24,11 +24,10 @@ make floppy ISO=/path/to/nt4-ppc.iso      # -> build/boot-floppy.img
 make disk                                 # -> build/nt-disk.img, 512 MB
 ```
 
-`make floppy` compiles the HAL and the ADB driver, takes three files it cannot ship off your CD
-(the ARC veneer and the Cirrus display pair), patches the veneer twice and the display miniport
-once, and lays out a 1.44 MB FAT12 image. **Do not share the result**: four of its ten files are
-Microsoft's and three of those are modified. Anyone with their own CD gets a byte-identical
-floppy from the same command.
+`make floppy` compiles the HAL and the ADB driver, takes the one file it cannot ship off your CD
+(Microsoft's ARC veneer), patches it two ways, and lays out a 1.44 MB FAT12 image of eight
+files. **Do not share the result**: two of those files are that veneer, modified. Anyone with
+their own CD gets a byte-identical floppy from the same command.
 
 `make disk` writes an empty disk with the one thing Setup insists on before it will start: an
 ARC *system partition*, 32 MB of FAT at the front, which on a real ARC machine `ARCINST.EXE`
@@ -109,11 +108,11 @@ the kernel onward Setup draws on the monitor and takes the ADB keyboard.
 |---|---|
 | **Select the computer type** | ↓ to **Other**, Enter. Enter again for the support disk (the floppy is already in). One entry is offered, **Apple Network Server 500/700**: Enter |
 | **Mass storage** | the step everyone skips. **S**, then **Other**, Enter, and pick **Apple Desktop Bus keyboard and mouse, and the OEM disk (powermac-nt-hal)**. The list then shows two devices: Enter |
-| **Video adapter** | **Other**, Enter for the support disk, and **Cirrus Logic 54M30 (Apple Network Server 500/700)**: Enter |
+| **Video adapter** | the CD's own **Cirrus Logic** entry from the list, Enter. (Floppies built before 5 November 2026 offered *Cirrus Logic 54M30 (Apple Network Server 500/700)* under **Other** instead, carrying a patched driver; the HAL no longer needs it, and this step has not yet been re-run with a stock CD) |
 | **Welcome to Setup** | Enter |
 | **Mass storage (NT's own list)** | Enter |
 | **Licence** | Page Down **eighteen times**, then **F8** |
-| **Hardware list** | should read *Apple Network Server 500/700*, *Cirrus Logic 54M30*, *XT, AT, or Enhanced Keyboard*. Enter |
+| **Hardware list** | should read *Apple Network Server 500/700*, the Cirrus Logic display you chose, *XT, AT, or Enhanced Keyboard*. Enter |
 | **Partitions** | ↓ twice to **D:**, the 478 MB partition. Enter. Never C:, the system partition |
 | **File system** | Enter on *Leave the current file system intact*. **Not NTFS**: the firmware and the veneer read FAT only |
 | **Directory** | Enter for `\WINNT` |

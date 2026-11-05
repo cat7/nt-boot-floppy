@@ -24,9 +24,8 @@ integration tests do the whole install unattended.
 
 **What does not, yet.** Networking: there is no adapter driver, and GUI Setup is told not to
 participate. Real hardware: nothing has been tried outside the emulator. And the boot floppy
-still carries four Microsoft files off the user's CD, three of them patched, so a built floppy
-cannot be shared; replacing the veneer and the display pair with code of this project's own is
-the open work.
+still carries Microsoft's ARC veneer off the user's CD, patched two ways, so a built floppy
+cannot be shared; an ARC firmware of this project's own in its place is the open work.
 
 ## Using it
 
@@ -66,15 +65,15 @@ are byte-identical.
 The floppy is **not** the boot device. Open Firmware reads Microsoft's ARC veneer off it as raw
 blocks, with this project's patches already in the bytes, and boots the CD as pressed. Setup
 then meets the same floppy as an ordinary manufacturer's support disk and takes from it the HAL
-(*Apple Network Server 500/700*), the ADB driver, and the display entry. NT has no driver for
+(*Apple Network Server 500/700*) and the ADB driver. NT has no driver for
 the floppy drive, so `boot.of` reads the whole floppy into RAM first and the ADB driver serves it
 to Setup's copy phase from there. The 54M30, the two 53C825As and the Cuda clock are driven by
 NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
 > ### The floppy image cannot be redistributed
 >
-> Four of its ten files are Microsoft's, off your CD, and three of those are modified. Nothing
-> of theirs is stored in this repository; every one is read from the image you name, which is why
+> Two of its eight files are Microsoft's ARC veneer, off your CD, patched two ways. Nothing of
+> theirs is stored in this repository; it is read from the image you name, which is why
 > `make floppy` needs one. The two files that *are* ours, `HALSHINR.DLL` and `ADBPORT.SYS`, are
 > GPL-2.0-only and may be distributed with their source. [`PROVENANCE.md`](PROVENANCE.md) has
 > the policy and every row behind it.

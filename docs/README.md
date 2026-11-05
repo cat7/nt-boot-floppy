@@ -23,6 +23,7 @@ in them were wrong within hours, and saying so is the point.
 | [`2026-09-16-handover-the-bitblt-engine.md`](2026-09-16-handover-the-bitblt-engine.md) | Work in progress at the time: GUI Setup draws nothing because `cirrus.dll` reaches for the GD5430's BitBLT engine |
 | [`2026-09-17-the-bitblt-engine.md`](2026-09-17-the-bitblt-engine.md) | **GUI Setup draws.** The BitBLT engine and the legacy VGA window, modelled and mirrored; the install completes and the installed system boots to logon |
 | [`2026-11-05-adbport-layouts-verified.md`](2026-11-05-adbport-layouts-verified.md) | The NT structure layouts `adbport.sys` relies on, read out of the shipped kernel and of Microsoft's own class and port drivers, instruction by instruction, and a checker that repeats the reading on any build |
+| [`2026-11-05-the-vga-window.md`](2026-11-05-the-vga-window.md) | **A stock `cirrus.sys` boots.** The HAL translates the legacy VGA window the miniport asks for, so ledger row 6, the OEM display class and the two Cirrus files on the floppy are retired; the floppy is eight files |
 | [`2026-11-05-retiring-the-veneer.md`](2026-11-05-retiring-the-veneer.md) | **A plan.** The last Microsoft file on the floppy is the veneer, patched two ways; what an ARC firmware of the project's own would have to do, two shapes it could take, and the six steps with the emulator test that finishes each |
 
 ## History
