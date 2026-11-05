@@ -24,8 +24,10 @@ integration tests do the whole install unattended.
 
 **What does not, yet.** Networking: there is no adapter driver, and GUI Setup is told not to
 participate. Real hardware: nothing has been tried outside the emulator. And the boot floppy
-still carries Microsoft's ARC veneer off the user's CD, patched two ways, so a built floppy
-cannot be shared; an ARC firmware of this project's own in its place is the open work.
+still carries Microsoft's ARC veneer off the user's CD for the *install* boot, so a built floppy
+cannot be shared. The installed system boots through this project's own ARC firmware
+(`src/arcfw`, [`docs/2026-11-05-the-arc-firmware.md`](docs/2026-11-05-the-arc-firmware.md));
+the same route for Setup is the open work.
 
 ## Using it
 
@@ -62,8 +64,10 @@ are byte-identical.
 
 ### How it fits together
 
-The floppy is **not** the boot device. Open Firmware reads Microsoft's ARC veneer off it as raw
-blocks, with this project's patches already in the bytes, and boots the CD as pressed. Setup
+The floppy is **not** the boot device. To install, Open Firmware reads Microsoft's ARC veneer
+off it as raw blocks, with this project's patches already in the bytes, and boots the CD as
+pressed; to start the installed system it reads this project's own ARC firmware (`ARCFW.EXE`)
+the same way, and no Microsoft code runs before NT's loader. Setup
 then meets the same floppy as an ordinary manufacturer's support disk and takes from it the HAL
 (*Apple Network Server 500/700*) and the ADB driver. NT has no driver for
 the floppy drive, so `boot.of` reads the whole floppy into RAM first and the ADB driver serves it
@@ -72,9 +76,10 @@ NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
 > ### The floppy image cannot be redistributed
 >
-> Two of its eight files are Microsoft's ARC veneer, off your CD, patched two ways. Nothing of
-> theirs is stored in this repository; it is read from the image you name, which is why
-> `make floppy` needs one. The two files that *are* ours, `HALSHINR.DLL` and `ADBPORT.SYS`, are
+> One of its eight files is Microsoft's ARC veneer, off your CD, patched for the install boot.
+> Nothing of theirs is stored in this repository; it is read from the image you name, which is
+> why `make floppy` needs one. The files that *are* ours, `HALSHINR.DLL`, `ADBPORT.SYS` and
+> `ARCFW.EXE`, are
 > GPL-2.0-only and may be distributed with their source. [`PROVENANCE.md`](PROVENANCE.md) has
 > the policy and every row behind it.
 

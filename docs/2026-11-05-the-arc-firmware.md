@@ -3,8 +3,7 @@
 
 # An ARC firmware of the project's own: `arcfw.exe` in place of Microsoft's veneer
 
-*5 November 2026. Work in progress while this note is being written; the result section says
-how far it got. The plan is [`2026-11-05-retiring-the-veneer.md`](2026-11-05-retiring-the-veneer.md),
+*5 November 2026. The result section says how far it got. The plan is [`2026-11-05-retiring-the-veneer.md`](2026-11-05-retiring-the-veneer.md),
 shape B: an ARC firmware implemented over Open Firmware's client interface, the shape
 `VENEER.EXE` itself has, with no hardware drivers of its own. This note records what had to be
 measured to write it, since nothing about the veneer's contract with NT's loaders is documented
@@ -14,13 +13,18 @@ anywhere that could be read.*
 
 Read from `VENEER.EXE`'s own code with `tools/coffdis.py` (it ships with its symbol table):
 
-- Open Firmware's `pe-loader` lays the raw COFF's sections at `ImageBase + RVA` **and maps no
-  headers**: the first instruction executed is the one at `ImageBase`, whatever
-  `AddressOfEntryPoint` says. The veneer's `.text` is RVA 0; so is `arcfw.exe`'s. A first build
-  with its code at RVA 0x1000 took a DSI at `0x50004`, executing its own COFF header.
-- pe-loader copies what is in the file and claims nothing beyond it. The veneer's `.bss` has
-  0x800 bytes of file behind it; `arcfw.exe`'s data and bss are file-backed too
-  (`elf2pe.py --raw-coff`).
+- Open Firmware's `pe-loader` **copies the file flat**: byte `SizeOfHeaders + n` of the file
+  lands at `ImageBase + n`, whatever the section table says, and the first instruction executed
+  is the one at `ImageBase`, whatever `AddressOfEntryPoint` says. The veneer is built that way
+  (every section's `PointerToRawData` is its RVA + 0x200, so file and memory agree). A first
+  `arcfw.exe` with its code at RVA 0x1000 took a DSI at `0x50004`, executing its own COFF
+  header; a second, with the sections packed by file alignment, had its `.rdata` strings land in
+  `.text`'s padding and its `.data` a page off, and Open Firmware answered every client-interface
+  call with -1 because the service name it was handed read as `""` (a side-by-side probe of the
+  veneer's `OFFinddevice` and ours at the `bctr`). `elf2pe.py --raw-coff` now pads each section
+  to its RVA stride, so the file is an image of memory.
+- pe-loader claims nothing beyond the file. The veneer's `.bss` has 0x800 bytes of file behind
+  it; `arcfw.exe`'s data and bss are file-backed too.
 - At entry (`start`, 0x50000): r5 is the client-interface handler, r1 a stack of Open
   Firmware's, the MMU on with Open Firmware's translations (`SRR1 0x3071`: IR, DR, FP, ME, IP,
   LE). The veneer stores r5 and calls `main`; `call_firmware` is `mtctr r5; bctr` with the
@@ -136,4 +140,45 @@ methods include `set-address`, `short-data-command`, `inquiry`, `probe-target`, 
 
 ## 5. Result
 
-*(being measured)*
+`arcfw.exe` boots the installed Windows NT 4.0 to its logon screen on the emulator, in place of
+the veneer: granny-smith's `ans-nt-installed-boot` row, pointed at a floppy built with
+`--arc-firmware build/arcfw.exe`, passes rungs B1 to B4 (firmware prompt, little-endian reboot,
+NT on the HAL with the ADB classes connected and the system in D:\WINNT, the logon screen).
+Rung B5 (Ctrl+Alt+Del, the Logon Information dialog, Return, the desktop): *(B5-RESULT)*.
+
+What it took, after the image loaded and ran -- each one measured, none guessed:
+
+1. **The flat file layout** above (section 1): the first symptom was every Open Firmware call
+   returning -1.
+2. **Integer properties are big-endian in the device tree** whatever mode the processor runs
+   in, and this firmware runs little-endian. `/chosen`'s `stdout` read as `0x00658dff`, which is
+   `0xff8d6500` -- an address inside Open Firmware -- byte-reversed, and `write` on it answered
+   -1. Every cell `getprop` returns is swapped (`of_get_ints`); strings are left alone.
+3. **The last-page sliver.** `bootdisk.of` claimed the rest of OSLOADER's last page before `go`,
+   a workaround for the veneer's page-unaligned claim (E24). `arcfw` claims the loader's pages
+   whole, so the sliver collided with its claim: `cannot claim 4a800 bytes at 80600000`. The
+   script no longer claims it when the image is `ARCFW.EXE`.
+4. **Free memory stops at KSEG0's 8 MB.** The loader takes its heap and stack from a free
+   descriptor through KSEG0 addresses, and KSEG0 is mapped for 8 MB: with free pages above it
+   on the list, OSLOADER died in `RtlZeroMemory` (DSI at `0x80611B58`, named from the symbol
+   table OSLOADER ships). Everything above 8 MB is FirmwareTemporary, as the veneer had it; the
+   kernel reports 64 MB all the same, and reclaims it.
+5. **`GetEnvironmentVariable` returns the value or NULL.** The vector's entry is the ARC one
+   (`PCHAR (PCHAR name)`), not the kernel's three-argument status-returning form. The first
+   arcfw returned ENOENT; OSLOADER took 2 for a string, read `HPTSIZE` as set, took the
+   small-machine path in `BlPpcMemoryInitialize` (a breakpoint at `0x806042A8` showed r31 =
+   0x10000 pages against the veneer's 0x4000) and the kernel died with bugcheck 0x50 at
+   `0x807F80C8` as user mode started -- a blue screen that sat still after `adbport: keyboard
+   class connected`, caught with a breakpoint on `KeBugCheckEx`.
+
+Of the ledger's veneer rows this retires every one on the disk-boot path: rows 1 and 2 (the
+claims), 3 (`OFClose`), 4 (`VrOpen`'s route) and 5 (the SCSI identifier) were patches to the
+veneer, and the veneer is no longer run for the installed system. The install boot (`BOOT.OF`,
+SETUPLDR off the CD) still runs the CD-patched veneer: `arcfw` has no `Load`/`Execute` route
+to SETUPLDR yet, and no NT CD was available to this session to test one against.
+
+Tools: `elf2pe.py --raw-coff` for the image; `coffsyms.py`/`coffdis.py` for OSLOADER, a raw
+COFF with 599 function symbols (`..BlPpcMemoryInitialize`, `..AllocateKseg0Blocks`,
+`..RtlZeroMemory` and the rest name every fault at once); granny-smith's headless shell for the
+breakpoints, which must be **logical** addresses for code under KSEG0 -- a physical breakpoint
+on OSLOADER or the kernel never fires.

@@ -24,10 +24,10 @@ make floppy ISO=/path/to/nt4-ppc.iso      # -> build/boot-floppy.img
 make disk                                 # -> build/nt-disk.img, 512 MB
 ```
 
-`make floppy` compiles the HAL and the ADB driver, takes the one file it cannot ship off your CD
-(Microsoft's ARC veneer), patches it two ways, and lays out a 1.44 MB FAT12 image of eight
-files. **Do not share the result**: two of those files are that veneer, modified. Anyone with
-their own CD gets a byte-identical floppy from the same command.
+`make floppy` compiles the HAL, the ADB driver and the ARC firmware, takes the one file it
+cannot ship off your CD (Microsoft's ARC veneer, for the install boot), patches it, and lays out
+a 1.44 MB FAT12 image of eight files. **Do not share the result**: one of those files is that
+veneer, modified. Anyone with their own CD gets a byte-identical floppy from the same command.
 
 `make disk` writes an empty disk with the one thing Setup insists on before it will start: an
 ARC *system partition*, 32 MB of FAT at the front, which on a real ARC machine `ARCINST.EXE`
@@ -136,10 +136,11 @@ load fd:,\bootdisk.of
 load-base loadsize eval
 ```
 
-`bootdisk.of` loads the veneer patched for a disk boot, sets the ARC environment for this boot,
-and points the firmware at the disk. The veneer's boot menu shows *Windows NT Workstation
-Version 4.00*, OSLOADER loads the kernel, the HAL comes up, and after `autochk` the Setup wizard
-is drawn. Every page takes Enter on its default button except the three marked.
+`bootdisk.of` loads this project's ARC firmware (`ARCFW.EXE`, built from `src/arcfw`; no
+Microsoft code runs before NT's loader), sets the ARC environment for this boot, and points the
+firmware at the disk. `Arcfw 0.1` reports what it found, OSLOADER's menu shows *Windows NT
+Workstation Version 4.00*, the kernel loads, the HAL comes up, and after `autochk` the Setup
+wizard is drawn. Every page takes Enter on its default button except the three marked.
 
 | Page | Press |
 |---|---|
