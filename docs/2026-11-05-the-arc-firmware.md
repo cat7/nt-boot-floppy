@@ -171,6 +171,16 @@ What it took, after the image loaded and ran -- each one measured, none guessed:
    `0x807F80C8` as user mode started -- a blue screen that sat still after `adbport: keyboard
    class connected`, caught with a breakpoint on `KeBugCheckEx`.
 
+And one measurement that is not a defect: the row's desktop golden differs from what arcfw
+boots to only in the taskbar clock. NT's clock reads six emulated minutes later because the
+firmware phase ran 2.7 billion more instructions, most of them Open Firmware reading a 425-block
+image off the floppy where the disk veneer is 316; from the kernel's banner to the logon screen
+the two boots take the same time. The image carried its 64 KB stack and 96 KB heap as file bytes
+(pe-loader copies the file flat), so both now come from Open Firmware -- its own stack, as the
+veneer uses it, and a `claim`ed heap -- and `ARCFW.EXE` is 53 KB, 105 blocks: a third of the
+veneer's read. The golden still cannot match pixel for pixel, since the clock cannot be made to
+agree; a row that boots through arcfw needs its own floppy and goldens in gs-test-data.
+
 Of the ledger's veneer rows this retires every one on the disk-boot path: rows 1 and 2 (the
 claims), 3 (`OFClose`), 4 (`VrOpen`'s route) and 5 (the SCSI identifier) were patches to the
 veneer, and the veneer is no longer run for the installed system. The install boot (`BOOT.OF`,
