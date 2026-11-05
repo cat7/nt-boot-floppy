@@ -214,7 +214,16 @@ unchanged. What it took:
    pointer keeps them bytes.
 
 With those, `arcfw` loads SETUPLDR (`0x80600000..0x80647200`, six sections) and enters it, and
-SETUPLDR opens the CD raw, draws *Windows NT Setup* and asks for the computer type. Granny
+SETUPLDR opens the CD raw, draws *Windows NT Setup* and asks for the computer type. Keys reach
+it through the firmware console (`GetReadStatus`/`Read` on `multi(0)serial(0)line(0)`), it
+reads the support floppy through `multi(0)disk(0)fdisk(0)` (the `swim3` node, raw), takes the
+ADB driver off it, and starts the kernel: the HAL, the ADB driver with the OEM disk at
+`0x3B98000`, the keyboard class, the drive letters, Setup's Welcome. Two things learned on the
+way, neither a defect of the firmware: NT's loaders read an arrow key on an ARC console as the
+single CSI byte `0x9B` followed by the letter, not as `ESC [ A` (the row's video-adapter choice
+is `\x9bA` twice, from *Other* to the CD's *Motorola Power Stack (cirrus 54xx)*); and the
+emulator keeps 64 KB of transmitted serial between drains of `scc.a.sent()` and drops the rest,
+so a probe that drains rarely sees the console "stop" mid-line while the machine is fine. Granny
 Smith's `ans-nt-install` row, pointed at the floppy `make floppy` now builds, then runs text-mode
 Setup and GUI Setup to the Registration page (rung N10, the last one without a Product ID). The
 veneer is retired from both boots, every one of the ledger's veneer rows (1 to 5) with it, and
