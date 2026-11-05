@@ -29,7 +29,7 @@ choice, because `NTKRNLMP.EXE` imports from the literal string `HAL.dll`. On the
 installed system it is **`HALSHINR.DLL`**, after Apple's codename for this logic board ("Shiner")
 in the 8.3 form NT's loader expects, the same convention as Microsoft's own `HALEAGLE.DLL` and
 maciNTosh's `halgoss.dll`; the HAL calls itself `halshinr` in its boot banner for that reason.
-[`tools/mkoem.py`](tools/mkoem.py) is what puts that name on the CD, together with a computer
+[`tools/attic/mkoem.py`](tools/attic/mkoem.py) is what puts that name on the CD, together with a computer
 type of its own — Setup's hardware menu offers *"Apple Network Server 500/700"*, and installs
 `HALSHINR.DLL` as the system's `hal.dll`. A sibling for desktop TNT machines would be a second
 HAL built from the same sources.
@@ -60,7 +60,7 @@ where it stops:
 | Keyboard | the ADB keyboard works — Cuda transport in the HAL, real keystrokes into Setup |
 | Video | `cirrus.sys` initialises the 54M30 |
 | Clock | the real time, read from Cuda, so installed files are dated correctly |
-| Its own identity | Setup's hardware menu offers **"Apple Network Server 500/700"** and installs `HALSHINR.DLL` as the system's `hal.dll` — a `TXTSETUP.SIF` entry of our own, not another machine's HAL borrowed ([`tools/mkoem.py`](tools/mkoem.py)) |
+| Its own identity | Setup's hardware menu offers **"Apple Network Server 500/700"** and installs `HALSHINR.DLL` as the system's `hal.dll` — a `TXTSETUP.SIF` entry of our own, not another machine's HAL borrowed ([`tools/attic/mkoem.py`](tools/attic/mkoem.py)) |
 | Setup | Welcome → mass storage → licence → hardware confirmation → partition list → format → `\WINNT` → copying → **"This portion of Setup has completed successfully"**, with no bugcheck in the run |
 | The next wall | the restart. Setup wrote the installed system's boot configuration through `HalSetEnvironmentVariable`, but that store is in RAM — this machine has no ARC NVRAM — so a reboot loses the `OSLOADER` path the firmware would need |
 

@@ -4,7 +4,7 @@
 """run-hal.py — boot the freshly built HAL on the emulated Network Server and capture ttya.
 
 Starting point: a Granny Smith checkpoint taken at NT Setup's "Select the computer type" menu
-with the veneer's OFClose fix applied and the *patched* ISO attached (tools/patch-iso.py puts
+with the veneer's OFClose fix applied and the *patched* ISO attached (tools/attic/patch-iso.py puts
 hal.dll in HALEAGLE.DLL's place; re-patch the same file before each run).  The run picks
 MOTOROLA PowerStack, presses Enter at the
 mass-storage screen, picks the Cirrus entry on the video menu, and runs until the console goes

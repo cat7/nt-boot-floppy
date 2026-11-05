@@ -115,7 +115,7 @@ def main():
     # patched is the one on this CD rather than one lying about on disk.
     raw = a.out + '.veneer-in'
     f.seek(vl * SECTOR); open(raw, 'wb').write(f.read(vs))
-    subprocess.run([sys.executable, os.path.join(HERE, 'mkveneer.py'), raw,
+    subprocess.run([sys.executable, os.path.join(HERE, '..', 'mkveneer.py'), raw,
                     '--out', vtmp, '--for', 'cd'], check=True)
     os.remove(raw)
     put(f, vl, open(vtmp, 'rb').read(), vs, '\\PPC\\VENEER.EXE (ledger rows 1-5)')

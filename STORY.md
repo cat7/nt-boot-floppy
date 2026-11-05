@@ -1173,7 +1173,7 @@ Which is wall 27 again — *"the checksum covers the directory-record length, no
 the image"* — this time for the HAL rather than a driver.
 
 **Fix — and this one retires a workaround instead of adding one.** The honest answer was never
-padding; it was to stop impersonating. `tools/mkoem.py` gives the HAL a name and a machine of
+padding; it was to stop impersonating. `tools/attic/mkoem.py` gives the HAL a name and a machine of
 its own, entirely inside the existing ISO:
 
 - **`TXTSETUP.SIF`**, byte-for-byte the same length. The `bigbend_up` machine — MOTOROLA Big
@@ -1522,7 +1522,7 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same — and **CD-only**: wall 46 showed it makes an MBR disk boot impossible, because `partition(N)` then opens the whole device | a device-aware patch, or a veneer replacement |
 | 5 | Eleven bytes renaming the veneer's SCSI model (wall 16) | same | a `TXTSETUP` `[Map.SCSI]` addition on an OEM disk would be cleaner |
 | 6 | The display miniport's legacy-VGA access range moved from `0xA0000` to `0x90000000` (wall 25) | edits a Microsoft driver's data. **Supersedes the `VideoPortVerifyAccessRanges` bypass**, which was never defeating a conflict check — it was ignoring our HAL's correct refusal to translate an address this board cannot reach | a video driver that does not claim the aperture at all, or a `[Display]` entry that configures one; this is the nearest thing to it that an OEM disk can deliver |
-| 7 | ~~The HAL delivered by overwriting `HALEAGLE.DLL` and selected as *MOTOROLA PowerStack*~~ **retired (wall 44)** | it impersonated another machine's HAL, and broke the moment Setup tried to install it | `tools/mkoem.py`: our own `[Computer]`, `[Hal.Load]` and `[hal]` entries, and `HALSHINR.DLL` by name |
+| 7 | ~~The HAL delivered by overwriting `HALEAGLE.DLL` and selected as *MOTOROLA PowerStack*~~ **retired (wall 44)** | it impersonated another machine's HAL, and broke the moment Setup tried to install it | `tools/attic/mkoem.py`: our own `[Computer]`, `[Hal.Load]` and `[hal]` entries, and `HALSHINR.DLL` by name |
 | 8 | ~~The `TXTSETUP.SIF` and `\PPC` directory patches applied to a *user's* CD image at run time~~ **retired (15 September)** | they edited proprietary media, even if only in a copy-on-write layer | `tools/mkbootfloppy.py`: a real OEM device-support disk, which is the mechanism those patches were imitating. A stock CD, MD5 `ab37556d…`, now boots and is offered *Apple Network Server 500/700* from the floppy |
 | 9 | `usbadb.sys`, a binary we may not redistribute | GPL-2.0 with no published source, so GPL §3 cannot be satisfied | our own port driver, from the `fpsidrv` template, on the HAL half that already exists |
 | 10 | ~~The driver written over `\PPC\I8042PRT.SYS`~~ **retired (15 September)** | it abused a name SETUPLDR hardcodes | `tools/mkbootfloppy.py --adb-driver`: the driver is a file on an OEM disk, offered under `[SCSI]` and picked with `S` / `Other` at the mass-storage screen. SETUPLDR loads any number of SCSI-class drivers in a loop and does not check what they are, so a driver that creates `\Device\KeyboardPort` works there — which is how maciNTosh has always shipped the same driver. Row 9 still stands: the binary is still not ours |

@@ -543,7 +543,7 @@ somewhere documented.
   opens each `\Device\Harddisk%d\Partition0` with `IoGetDeviceObjectPointer` and assigns in
   NT's order.
 - **The HAL's own identity (solved, wall 44).** The HAL no longer impersonates
-  `HALEAGLE.DLL`: `tools/mkoem.py` adds a `[Computer]`/`[Hal.Load]`/`[hal]` entry of its own,
+  `HALEAGLE.DLL`: `tools/attic/mkoem.py` adds a `[Computer]`/`[Hal.Load]`/`[hal]` entry of its own,
   so Setup offers *"Apple Network Server 500/700"* and installs `HALSHINR.DLL`. This also
   retired the checksum failure that impersonation caused during the copy phase.
 - **The current wall is whatever the copy phase reaches.** Setup is copying Windows NT to the

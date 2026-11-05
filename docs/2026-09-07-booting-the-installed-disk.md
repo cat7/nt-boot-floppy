@@ -250,7 +250,7 @@ this machine has no ARC NVRAM (ledger rows 11 and 12) and a reboot therefore sta
 [`tools/mkbootscript.py`](../tools/mkbootscript.py) generates that script and
 [`tools/run-boot.py`](../tools/run-boot.py) runs it. The generator stores no Microsoft code: the
 two ranges it restores are read out of the `VENEER.EXE` you supply, which is the arrangement
-`tools/mkoem.py` already uses for a user's CD image.
+`tools/attic/mkoem.py` already uses for a user's CD image.
 
 ```bash
 python3 tools/mkbootscript.py --veneer /path/to/PPC/VENEER.EXE \

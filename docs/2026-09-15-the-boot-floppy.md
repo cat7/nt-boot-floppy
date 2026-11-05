@@ -81,7 +81,7 @@ python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img \
 #   initialising video.  cirrus.sys and cirrus.dll come off the user's own media
 
 # 3. a cold boot of the *stock* CD, with the veneer read off the floppy
-python3 tools/mkcoldboot.py --rom $R --cd <stock.iso> --staging <install-target.img> \
+python3 tools/attic/mkcoldboot.py --rom $R --cd <stock.iso> --staging <install-target.img> \
         --floppy tmp/boot-floppy.img \
         --veneer-dev /bandit/gc/swim3 --veneer-block 0x21 --veneer-blocks 0x13c \
         --cd-dev /bandit/53c825@11/sd@0,0 --out tmp/fd.gs --chunks 900
@@ -113,7 +113,7 @@ python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img --veneer tmp/veneer-fd.exe \
         --setupldr <PPC/SETUPLDR> --hal build/hal.dll \
         --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
-python3 tools/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
+python3 tools/attic/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
         --floppy tmp/boot-floppy.img --veneer-dev /bandit/gc/swim3 \
         --veneer-block 0x21 --veneer-blocks 0x13c \
         --cd-dev /bandit/53c825@11/sd@0,0 --out tmp/fd.gs --chunks 900
