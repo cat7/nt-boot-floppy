@@ -191,11 +191,35 @@ KB, 105 blocks: a third of the veneer's read. The golden still cannot match pixe
 since the clock cannot be made to agree; a row that boots through arcfw needs its own floppy and
 goldens in gs-test-data.
 
-Of the ledger's veneer rows this retires every one on the disk-boot path: rows 1 and 2 (the
-claims), 3 (`OFClose`), 4 (`VrOpen`'s route) and 5 (the SCSI identifier) were patches to the
-veneer, and the veneer is no longer run for the installed system. The install boot (`BOOT.OF`,
-SETUPLDR off the CD) still runs the CD-patched veneer: `arcfw` has no `Load`/`Execute` route
-to SETUPLDR yet, and no NT CD was available to this session to test one against.
+## 6. The install boot: SETUPLDR off the CD
+
+With a Windows NT 4.0 Workstation for PowerPC CD at hand (the stock October 1996 pressing:
+`CDROM_W.40`, a `VENEER.EXE` on which `mkveneer.py` verifies every patch site), `BOOT.OF` was
+pointed at `ARCFW.EXE` as well, with the ARC environment for the install set on `/options` for
+the boot (`SYSTEMPARTITION` the CD, `OSLOADER` `\\PPC\\SETUPLDR` on it) and the OEM-disk staging
+unchanged. What it took:
+
+1. **Open Firmware's `iso-9660-files` package opens a file and then refuses it.** `Open` of
+   `multi(0)scsi(0)cdrom(0)fdisk(0)\\PPC\\SETUPLDR` as `sd@0,0:,\\PPC\\SETUPLDR` gave an instance;
+   `seek` on it answered -1, `read` answered -1, and `call-method "load"` threw inside the
+   firmware (it printed its banner and `can't LOAD from this device`). The FAT package behaves:
+   OSLOADER off the system partition is read with seek and read.
+2. **So the firmware finds CD files itself**: the device opened raw (which reads and seeks at
+   byte offsets, as SETUPLDR itself uses it, E3), the primary volume descriptor at sector 16, a
+   walk of the directory records for each path component (`io_open_iso_file`), and the image
+   read at `extent * 2048 + offset`.
+3. **The alignment wall, once more.** The four byte loads that assemble a little-endian field
+   of a directory record were folded by clang into one `lwz` at a misaligned address, which is
+   an alignment exception on this 604 (`DEFAULT CATCH` code `FFF00600` at `0x54FFC`); a volatile
+   pointer keeps them bytes.
+
+With those, `arcfw` loads SETUPLDR (`0x80600000..0x80647200`, six sections) and enters it, and
+SETUPLDR opens the CD raw, draws *Windows NT Setup* and asks for the computer type. Granny
+Smith's `ans-nt-install` row, pointed at the floppy `make floppy` now builds, then runs text-mode
+Setup and GUI Setup to the Registration page (rung N10, the last one without a Product ID). The
+veneer is retired from both boots, every one of the ledger's veneer rows (1 to 5) with it, and
+`make floppy` takes nothing off any CD: the floppy is this project's, GPL-2.0-only, and may be
+redistributed. `release.yml` publishes it.
 
 Tools: `elf2pe.py --raw-coff` for the image; `coffsyms.py`/`coffdis.py` for OSLOADER, a raw
 COFF with 599 function symbols (`..BlPpcMemoryInitialize`, `..AllocateKseg0Blocks`,

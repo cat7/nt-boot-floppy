@@ -22,22 +22,25 @@ firmware to its logon screen and takes Ctrl+Alt+Del from the ADB keyboard. Both 
 mouse through Cuda, the real-time clock, and NT's restart all work. The emulator project's
 integration tests do the whole install unattended.
 
+**Nothing of Microsoft's is on the floppy.** Both boots, the install from the CD and the
+installed system, go through this project's own ARC firmware (`src/arcfw`,
+[`docs/2026-11-05-the-arc-firmware.md`](docs/2026-11-05-the-arc-firmware.md)); the veneer off
+the CD, which earlier builds patched and carried, is gone. A built floppy is GPL-2.0-only and may
+be shared, and [the releases](https://github.com/pappadf/powermac-nt-hal/releases) carry one.
+
 **What does not, yet.** Networking: there is no adapter driver, and GUI Setup is told not to
-participate. Real hardware: nothing has been tried outside the emulator. And the boot floppy
-still carries Microsoft's ARC veneer off the user's CD for the *install* boot, so a built floppy
-cannot be shared. The installed system boots through this project's own ARC firmware
-(`src/arcfw`, [`docs/2026-11-05-the-arc-firmware.md`](docs/2026-11-05-the-arc-firmware.md));
-the same route for Setup is the open work.
+participate. Real hardware: nothing has been tried outside the emulator.
 
 ## Using it
 
 Three ingredients, none of which can ship here: the Network Server's **Open Firmware 2.26NT
 ROM**, a **Windows NT 4.0 Workstation for PowerPC CD image** with its Product ID, and the
-[Granny Smith](https://github.com/pappadf/granny-smith) emulator.
+[Granny Smith](https://github.com/pappadf/granny-smith) emulator. The floppy itself needs none of
+them: build it, or take it from a release.
 
 ```bash
 make                                       # -> build/hal.dll, build/adbport.sys, build/arcfw.exe
-make floppy ISO=/path/to/nt4-ppc.iso       # -> build/boot-floppy.img
+make floppy                                # -> build/boot-floppy.img
 make disk                                  # -> build/nt-disk.img
 ```
 
@@ -64,24 +67,32 @@ are byte-identical.
 
 ### How it fits together
 
-The floppy is **not** the boot device. To install, Open Firmware reads Microsoft's ARC veneer
-off it as raw blocks, with this project's patches already in the bytes, and boots the CD as
-pressed; to start the installed system it reads this project's own ARC firmware (`ARCFW.EXE`)
-the same way, and no Microsoft code runs before NT's loader. Setup
+The floppy is **not** the boot device. Open Firmware reads this project's ARC firmware
+(`ARCFW.EXE`) off it as raw blocks; the firmware gives NT's loaders the ARC interface they expect
+over Open Firmware's client interface, loads SETUPLDR off the CD as pressed (or OSLOADER off the
+installed disk), and no Microsoft code runs before NT's loader. Setup
 then meets the same floppy as an ordinary manufacturer's support disk and takes from it the HAL
 (*Apple Network Server 500/700*) and the ADB driver. NT has no driver for
 the floppy drive, so `boot.of` reads the whole floppy into RAM first and the ADB driver serves it
 to Setup's copy phase from there. The 54M30, the two 53C825As and the Cuda clock are driven by
 NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
-> ### The floppy image cannot be redistributed
+> ### The floppy image may be redistributed
 >
-> One of its eight files is Microsoft's ARC veneer, off your CD, patched for the install boot.
-> Nothing of theirs is stored in this repository; it is read from the image you name, which is
-> why `make floppy` needs one. The files that *are* ours, `HALSHINR.DLL`, `ADBPORT.SYS` and
-> `ARCFW.EXE`, are
-> GPL-2.0-only and may be distributed with their source. [`PROVENANCE.md`](PROVENANCE.md) has
+> Everything on it is this project's: `ARCFW.EXE`, `HALSHINR.DLL`, `ADBPORT.SYS`, a
+> `txtsetup.oem` and three Open Firmware scripts, all GPL-2.0-only, all built from this tree by
+> `make floppy` with nothing taken from any CD. SETUPLDR and NT's own drivers stay on your CD,
+> where the firmware and Setup read them. Floppies built before 5 November 2026 carried
+> Microsoft's veneer off the CD and could not be shared. [`PROVENANCE.md`](PROVENANCE.md) has
 > the policy and every row behind it.
+
+## Releases
+
+A tag `v*` runs [`release.yml`](.github/workflows/release.yml): it builds everything, lays out
+the floppy, checks that nothing of Microsoft's is on it and that it rebuilds byte for byte, and
+publishes the image, the three binaries and their checksums as a GitHub Release and on GitHub
+Pages (with this HOWTO; the repository's Pages source must be set to *GitHub Actions* once).
+Every push builds the same floppy as a CI artifact ([`build.yml`](.github/workflows/build.yml)).
 
 ## What is here
 

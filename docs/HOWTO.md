@@ -20,14 +20,15 @@ CD image at any point.
 ## 1. Build the floppy and the disk
 
 ```bash
-make floppy ISO=/path/to/nt4-ppc.iso      # -> build/boot-floppy.img
+make floppy                               # -> build/boot-floppy.img
 make disk                                 # -> build/nt-disk.img, 512 MB
 ```
 
-`make floppy` compiles the HAL, the ADB driver and the ARC firmware, takes the one file it
-cannot ship off your CD (Microsoft's ARC veneer, for the install boot), patches it, and lays out
-a 1.44 MB FAT12 image of eight files. **Do not share the result**: one of those files is that
-veneer, modified. Anyone with their own CD gets a byte-identical floppy from the same command.
+`make floppy` compiles the HAL, the ADB driver and the ARC firmware and lays them out, with a
+`txtsetup.oem` and three Open Firmware scripts, as a 1.44 MB FAT12 image of seven files. Nothing
+on it comes off the CD; it is GPL-2.0-only and may be shared, and every
+[release](https://github.com/pappadf/powermac-nt-hal/releases) carries one. The build is
+reproducible: the same tree gives a byte-identical floppy.
 
 `make disk` writes an empty disk with the one thing Setup insists on before it will start: an
 ARC *system partition*, 32 MB of FAT at the front, which on a real ARC machine `ARCINST.EXE`
@@ -61,7 +62,7 @@ disk at the right ids.
 
 **The ids are hardcoded** in the floppy's scripts: `boot.of` points the firmware at
 `/bandit/53c825@11/sd@0,0` and `bootdisk.of` at `/bandit/53c825@12/sd@0,0`. A CD anywhere else
-gets you to the veneer and then `VrOpen returned 8`.
+gets you to the firmware and then `arcfw: fatal: cannot load '...\PPC\SETUPLDR'`.
 
 **RAM is not negotiable.** `setup.of` puts the load address at 62 MB. On a 32 MB machine the
 `load` still says `ok`, and the `eval` then fails with an unknown word whose name prints as a
@@ -86,16 +87,24 @@ load fd:,\boot.of
 load-base loadsize eval
 ```
 
-You should see the veneer load, the floppy read into RAM, and SETUPLDR start off the CD:
+You should see the firmware load, the floppy read into RAM, and SETUPLDR start off the CD:
 
 ```
 Loading PE/COFF image_base 50000
 powermac-nt-hal: reading the OEM disk into RAM (this takes a while) .........
 powermac-nt-hal: B40 blocks of the OEM disk are in RAM
 powermac-nt-hal: starting Windows NT Setup
-Open Firmware ARC Interface  Version 3.0
-Booting from 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'
+
+Arcfw 0.1: ARC firmware for the Apple Network Server (powermac-nt-hal)
+arcfw: system parameter block at 4000, 37 vector entries
+arcfw: KSEG0 mapped, 800000 bytes
+arcfw: configuration tree built
+arcfw: booting 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'
+arcfw: loaded at 80600000..80647200, entry descriptor 80641aac
+arcfw: starting the loader
 ```
+
+then SETUPLDR's blue *Windows NT Setup* screen on the serial console and the monitor.
 
 The comma after `fd:` is required: Open Firmware reads what follows `:` as a partition number.
 `dir fd:,\` lists the floppy if you want to check the drive is live first.
@@ -115,7 +124,7 @@ the kernel onward Setup draws on the monitor and takes the ADB keyboard.
 | **Licence** | Page Down **eighteen times**, then **F8** |
 | **Hardware list** | should read *Apple Network Server 500/700*, the Cirrus Logic display you chose, *XT, AT, or Enhanced Keyboard*. Enter |
 | **Partitions** | ↓ twice to **D:**, the 478 MB partition. Enter. Never C:, the system partition |
-| **File system** | Enter on *Leave the current file system intact*. **Not NTFS**: the firmware and the veneer read FAT only |
+| **File system** | Enter on *Leave the current file system intact*. **Not NTFS**: the firmware reads FAT only, and the installed system boots from it |
 | **Directory** | Enter for `\WINNT` |
 | **Disk examination** | **Esc** to skip it |
 | **Copying** | ten to fifteen minutes |
@@ -212,7 +221,7 @@ python3 tools/fatput.py nt-installed.img 1 '\OS\WINNT40\HAL.DLL' build/hal.dll
 |---|---|
 | `load fd:\boot.of` says `PARTITION is not a number` | the comma: `fd:,\boot.of` |
 | `eval` reports an unknown word printed as blanks | 32 MB of RAM; the machine needs 64 |
-| `VrOpen returned 8` after the veneer starts | the CD is not at id 0 on the first controller (the install boot) |
+| `arcfw: fatal: cannot load '...cdrom(0)fdisk(0)\PPC\SETUPLDR'` | the CD is not at id 0 on the first controller, or it is not an NT 4.0 PowerPC CD |
 | `arcfw: fatal: cannot load 'multi(0)scsi(1)disk(0)...osloader.exe'` | the disk is not at id 0 on the second controller, or its system partition has no `\OS\WINNT40\OSLOADER.EXE` yet (text-mode Setup has not completed) |
 | `arcfw: fatal: no OSLOADER in the environment` | `bootdisk.of` was not what ran; it sets the ARC variables on `/options` before starting the firmware |
 | `arcfw` prints its banner and nothing after `starting the loader` | `setenv ARCFW-DEBUG 7fff`, boot again, and read the trace |
