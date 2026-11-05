@@ -80,6 +80,46 @@ def pe_checksum(data):
     s = (s & 0xffff) + (s >> 16)
     return (s & 0xffff) + len(data)
 
+def write_xcoff(elf, alloc, base, a):
+    """XCOFF32, big-endian headers (XCOFF is AIX's format, whatever the code's endianness).  The
+    file header (20 bytes), the a.out header (72), two section headers (40 each), then .text's
+    bytes.  Open Firmware's xcoff-loader claims each section at its virtual address, copies
+    .text, zeroes .bss, and `go` jumps to the a.out entry with the client interface in r5."""
+    entry_sym = elf.byname.get(a.entry)
+    if entry_sym is None: sys.exit(f'elf2pe: no entry symbol {a.entry}')
+    entry = entry_sym['value']
+    filebacked = [s for s in alloc if s['type'] == 1]
+    nobits = [s for s in alloc if s['type'] == 8]
+    text_start = base
+    text_end = max(s['addr'] + s['size'] for s in filebacked)
+    img = bytearray(text_end - text_start)
+    for s in filebacked:
+        o = s['addr'] - text_start
+        img[o:o + s['size']] = elf.d[s['offset']:s['offset'] + s['size']]
+    bss_start = min((s['addr'] for s in nobits), default=text_end)
+    bss_end = max((s['addr'] + s['size'] for s in nobits), default=text_end)
+    if bss_start < text_end: bss_start = text_end          # a .data/.bss overlap is just zeros
+    bss_size = max(0, bss_end - bss_start)
+    nscns = 2
+    hdr_size = 20 + 72 + 40 * nscns
+    text_ptr = hdr_size
+    # file header: magic 0x01DF (U802TOCMAGIC), nscns, timdat, symptr, nsyms, opthdr, flags
+    # (F_RELFLG 1 | F_EXEC 2 | F_LNNO 4 | F_AR32W 0x200: an executable with no relocations)
+    fh = struct.pack('>HHIIIHH', 0x01DF, nscns, TIMESTAMP, 0, 0, 72, 0x0207)
+    # a.out header: magic 0x010B, vstamp, tsize, dsize, bsize, entry, text_start, data_start,
+    # toc, snentry, sntext, sndata, sntoc, snloader, snbss, algntext, algndata, modtype,
+    # cpuflag, cputype, maxstack, maxdata, debugger, then padding to 72
+    ah = struct.pack('>HHIIIIIIIHHHHHHHH2sBBIII', 0x010B, 1, len(img), 0, bss_size, entry, text_start, text_end,
+                     0, 1, 1, 0, 0, 0, 2, 2, 2, b'1L', 0, 0, 0, 0, 0)
+    ah = ah.ljust(72, b'\0')
+    def scn(name, vaddr, size, ptr, flags):
+        return struct.pack('>8sIIIIIIHHI', name.encode().ljust(8, b'\0'), vaddr, vaddr, size, ptr, 0, 0, 0, 0, flags)
+    sh = scn('.text', text_start, len(img), text_ptr, 0x0020) + scn('.bss', bss_start, bss_size, 0, 0x0080)
+    out = fh + ah + sh + bytes(img)
+    open(a.out, 'wb').write(out)
+    print(f'{a.out}: XCOFF, .text {text_start:#x}+{len(img):#x}, .bss {bss_start:#x}+{bss_size:#x}, entry {entry:#x}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('elf'); ap.add_argument('out')
@@ -91,6 +131,12 @@ def main():
                          'ARC loaders take (an MZ-headed PE is what NT\'s kernel-side loader takes)')
     ap.add_argument('--import-dll', action='append', default=None,
                     help='one per import group in the .imports file, in order (default: ntoskrnl.exe)')
+    ap.add_argument('--xcoff', action='store_true',
+                    help="an XCOFF instead: what Open Firmware's own xcoff-loader (the stock Power Macintosh "
+                         'and Network Server ROMs) takes with `load` and `go`.  One .text holding every '
+                         'file-backed section as an image of memory from the link base, a .bss for the rest, '
+                         "and the entry at the entry symbol's address, as the Linux/BSD boot loaders of the "
+                         'era were laid out (hack-coff).  No MZ, no PE, no imports or exports')
     ap.add_argument('--section-align', type=lambda x: int(x, 0), default=0x1000)
     ap.add_argument('--file-align', type=lambda x: int(x, 0), default=0x200)
     a = ap.parse_args()
@@ -106,6 +152,9 @@ def main():
     # so the first section is linked at ImageBase and RVA 0 is code (the veneer's shape).
     image_base = base if a.raw_coff else base - SA
     def rva(addr): return addr - image_base
+    if a.xcoff:
+        write_xcoff(elf, alloc, base, a)
+        return
     # PE section descriptors: name, rva, vsize, data(bytes), chars
     pesecs = []
     for s in alloc:

@@ -356,6 +356,22 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
     # own descriptor code decodes as page 0x80003D27 and rejects ("is not in installed memory",
     # E24).  pe-loader rounds its own claims the same way (`loadsize fff + -1000 and`).
     claim = (veneer_bytes + 0xFFF) & ~0xFFF
+    # The stock ROM (Open Firmware 1.1.22, or a Power Macintosh's) has no pe-loader; its
+    # xcoff-loader takes an XCOFF (`elf2pe.py --xcoff`), and the claims pe-loader's map-space did
+    # go through /chosen's memory and mmu instances, as a client program would make them.
+    stock = firmware.upper().endswith('.XCF')
+    loader = '/packages/xcoff-loader' if stock else '/packages/pe-loader'
+    def mapcall(addr, size):
+        return (f'   {addr:X} {size:X} nt-map' if stock else
+                f'   {addr:X} {size:X} " map-space" nt-pe $call-method')
+    init = '   " init-program" nt-pe $call-method' if stock else '   init-program'
+    pre = ([f'" /chosen" find-package drop value nt-chosen',
+            ': nt-ih ( name$ -- ihandle ) nt-chosen get-package-property drop decode-int nip nip ;',
+            '" memory" nt-ih value nt-mem',
+            '" mmu" nt-ih value nt-mmu',
+            '\\ claim the pages at addr and map them at the same address, as pe-loader\'s map-space did',
+            ': nt-map ( addr size -- ) 2dup 0 " claim" nt-mem $call-method drop over swap -1 " map" nt-mmu $call-method ;',
+            ''] if stock else [])
     L = ['\\ powermac-nt-hal -- start Windows NT Setup on an Apple Network Server 500/700',
          '\\',
          '\\ Run this at the 0 > prompt with:',
@@ -363,18 +379,18 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
          '\\     load-base loadsize eval',
          '\\',
          ('\\ The ARC firmware read here is this project\'s own (src/arcfw); nothing of Microsoft\'s'
-          if firmware == 'ARCFW.EXE' else
+          if firmware.startswith('ARCFW') else
           '\\ Everything below is Open Firmware\'s own; nothing is patched at run time.  The veneer'),
          ('\\ is on this disk.  It loads SETUPLDR off the CD, named by the environment set below.'
-          if firmware == 'ARCFW.EXE' else
+          if firmware.startswith('ARCFW') else
           '\\ on this disk already carries its patches as bytes.'),
          '',
          '0 value nt-pe',
          '0 value nt-fd',
-         '',
+         ''] + pre + [
          ': nt-boot',
-         f'   " /packages/pe-loader" open-dev to nt-pe',
-         f'   {stage:X} {claim:X} " map-space" nt-pe $call-method',
+         f'   " {loader}" open-dev to nt-pe',
+         mapcall(stage, claim),
          f'   " {fd_dev}" open-dev to nt-fd']
     addr, blk, left = stage, veneer_block, veneer_blocks
     while left > 0:
@@ -383,16 +399,16 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
         addr += n * 512
         blk += n
         left -= n
-    L += [f'   {load:X} {claim:X} " map-space" nt-pe $call-method',
+    L += [mapcall(load, claim),
           f'   {stage:X} {load:X} {veneer_bytes:X} move',
           f'   {veneer_bytes:X} to loadsize',
-          '   init-program',
+          init,
           # Not diagnostics.  mkcoldboot.py maps this low page after init-program and the boot
           # works; leave it out and the veneer dies at its own 0x52FC8 with a DSI
           # (`DEFAULT CATCH!, code=FFF00300`).  Ledger row 1 nops the veneer's own `claim` of the
           # SYSTEM PARAMETER BLOCK and RESTART BLOCK, which live down here -- so with the claim
           # skipped, somebody still has to map the page, and this is who.
-          f'   4000 1000 " map-space" nt-pe $call-method']
+          mapcall(0x4000, 0x1000)]
     # The OEM disk: map header page + image, read every block, sum what read-blocks returned.
     # This comes *after* the three small mappings on purpose.  pe-loader's map-space is
     # `claim-mem claim-virt do-map`, and with the 0x169000-byte region claimed first, the claim of
@@ -404,7 +420,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
     # was read as one the first time.  So: say what is happening, and a dot per ten chunks.
     L += ['   \\ the whole disk again, for Windows NT: see include/oemdisk.h',
           '   ." powermac-nt-hal: reading the OEM disk into RAM (this takes a while) " ',
-          f'   {hdr:X} {C["OEMDISK_HEADER_SIZE"] + img_bytes:X} " map-space" nt-pe $call-method',
+          mapcall(hdr, C["OEMDISK_HEADER_SIZE"] + img_bytes),
           '   0']
     addr, blk, left, k = img, 0, disk_blocks, 0
     while left > 0:
@@ -424,7 +440,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
           f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
           '   nt-fd close-dev',
           f'   " {cd_dev}" encode-string " bootpath" _chosen (property)']
-    if firmware == 'ARCFW.EXE':
+    if firmware.startswith('ARCFW'):
         L += ['   \\ the ARC environment for this boot: SETUPLDR off the CD, on the node arcfw reads']
         L += env_property_lines(env or [])
     L += ['   ." powermac-nt-hal: starting Windows NT Setup" cr',
@@ -501,6 +517,22 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
     # own descriptor code decodes as page 0x80003D27 and rejects ("is not in installed memory",
     # E24).  pe-loader rounds its own claims the same way (`loadsize fff + -1000 and`).
     claim = (veneer_bytes + 0xFFF) & ~0xFFF
+    # The stock ROM (Open Firmware 1.1.22, or a Power Macintosh's) has no pe-loader; its
+    # xcoff-loader takes an XCOFF (`elf2pe.py --xcoff`), and the claims pe-loader's map-space did
+    # go through /chosen's memory and mmu instances, as a client program would make them.
+    stock = firmware.upper().endswith('.XCF')
+    loader = '/packages/xcoff-loader' if stock else '/packages/pe-loader'
+    def mapcall(addr, size):
+        return (f'   {addr:X} {size:X} nt-map' if stock else
+                f'   {addr:X} {size:X} " map-space" nt-pe $call-method')
+    init = '   " init-program" nt-pe $call-method' if stock else '   init-program'
+    pre = ([f'" /chosen" find-package drop value nt-chosen',
+            ': nt-ih ( name$ -- ihandle ) nt-chosen get-package-property drop decode-int nip nip ;',
+            '" memory" nt-ih value nt-mem',
+            '" mmu" nt-ih value nt-mmu',
+            '\\ claim the pages at addr and map them at the same address, as pe-loader\'s map-space did',
+            ': nt-map ( addr size -- ) 2dup 0 " claim" nt-mem $call-method drop over swap -1 " map" nt-mmu $call-method ;',
+            ''] if stock else [])
     L = ['\\ powermac-nt-hal -- boot the Windows NT system installed on the hard disk',
          '\\',
          '\\ Run this at the 0 > prompt with:',
@@ -508,19 +540,19 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
          '\\     load-base loadsize eval',
          '\\',
          ('\\ The ARC firmware read here is this project\'s own (src/arcfw), not Microsoft\'s veneer.'
-          if firmware == 'ARCFW.EXE' else
+          if firmware.startswith('ARCFW') else
           '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path'),
          ('\\ It takes OSLOADER and the rest of the ARC environment from /options, set below for this'
-          if firmware == 'ARCFW.EXE' else
+          if firmware.startswith('ARCFW') else
           '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment goes onto /options for this'),
          '\\ boot only; nothing is patched at run time.',
          '',
          '0 value nt-pe',
          '0 value nt-fd',
-         '',
+         ''] + pre + [
          ': nt-boot-disk',
-         f'   " /packages/pe-loader" open-dev to nt-pe',
-         f'   {stage:X} {claim:X} " map-space" nt-pe $call-method',
+         f'   " {loader}" open-dev to nt-pe',
+         mapcall(stage, claim),
          f'   " {fd_dev}" open-dev to nt-fd']
     addr, blk, left = stage, veneer_block, veneer_blocks
     while left > 0:
@@ -530,19 +562,19 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
         blk += n
         left -= n
     L += ['   nt-fd close-dev',
-          f'   {load:X} {claim:X} " map-space" nt-pe $call-method',
+          mapcall(load, claim),
           f'   {stage:X} {load:X} {veneer_bytes:X} move',
           f'   {veneer_bytes:X} to loadsize',
-          '   init-program',
+          init,
           # the same low page boot.of maps, for the same reason (ledger row 1)
-          f'   4000 1000 " map-space" nt-pe $call-method']
+          mapcall(0x4000, 0x1000)]
     pad = (-loader_size) % 0x1000
     # arcfw claims the loader's pages whole itself, and its memory descriptors are built from
     # page-rounded claims; the sliver would only collide with that claim (5 November).
-    if pad and firmware != 'ARCFW.EXE':
+    if pad and not firmware.startswith('ARCFW'):
         end = (loader_base & 0x7FFFFFFF) + loader_size
         L += ['   \\ the loader is not a whole number of pages; claim the rest of its last page (E24)',
-              f'   {end:X} {pad:X} " map-space" nt-pe $call-method']
+              mapcall(end, pad)]
     L += [f'   " {disk_dev}" encode-string " bootpath" _chosen (property)',
           '   \\ the ARC environment for this boot, on the node the veneer reads it from']
     L += env_property_lines(env)
@@ -688,7 +720,7 @@ def main():
         if dveneer is not None:
             print('  (--disk-veneer ignored: --arc-firmware boots the installed system)')
         dveneer = read(a.arc_firmware)
-        dname = 'ARCFW.EXE'
+        dname = 'ARCFW.XCF' if a.arc_firmware.lower().endswith('.xcf') else 'ARCFW.EXE'
     if veneer is not None:
         vcluster, vlba = fs.alloc(veneer)
         if vcluster != 2:
