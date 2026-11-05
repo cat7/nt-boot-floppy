@@ -46,19 +46,38 @@ the HAL (validates it, marks the pages firmware-permanent) and this driver.
 same clang/lld/`elf2pe.py` toolchain. `adbport.imports` names two DLLs; `tools/mkstubs.py` and
 `elf2pe.py` learnt import groups for it.
 
-## What is unverified
+## What is verified, and what is not
 
-Everything, in this order of likelihood of being wrong:
+**The NT 4.0 structure layouts in `adbport.h` are verified**, as of 5 November 2026, against the
+code of the shipped kernel and of Microsoft's own class and port drivers taken off an installed
+system: `IoCreateDevice` for `DEVICE_OBJECT`, `IoInitializeIrp`, `IoBuildDeviceIoControlRequest`
+and `IofCompleteRequest` for the `IRP` and `IO_STACK_LOCATION`, `MmMapLockedPages` for the `MDL`,
+`kbdclass.sys` and `floppy.sys` for `DRIVER_OBJECT`'s dispatch table, `kbdclass`/`mouclass` for
+the connect IOCTLs and the input-record strides, `i8042prt.sys` for the input records, the
+attribute sizes and every keyboard IOCTL code, and `floppy.sys` for `DISK_GEOMETRY`. Each
+declaration in the header carries the routine and image address it was read from;
+[`docs/2026-11-05-adbport-layouts-verified.md`](../../docs/2026-11-05-adbport-layouts-verified.md)
+is the account, and [`tools/check-nt-layouts.py`](../../tools/check-nt-layouts.py) re-reads the
+same instruction patterns from any build's binaries:
 
-1. The NT 4.0 structure layouts in `adbport.h`. Each is what the DDK documents, pinned with a
-   static assert; `DRIVER_OBJECT.DriverName` at `0x1C` is confirmed from a shipped binary, the
-   rest are not. A wrong `IO_STACK_LOCATION` size shows up as garbage IOCTL codes; a wrong
-   `IRP` shows up as a bugcheck on the first completion.
-2. Which DLL exports what. `KeAcquireSpinLock` from the kernel and `KeRaiseIrql` from the HAL is
-   how a working driver on this platform has it; a wrong guess is an unresolved import at load.
-3. Whether `kbdclass` is happy with the attributes we report, and whether Setup's key handling
-   needs the E0 flags exactly as set.
-4. The OEM disk's physical address (`0x03B97000`) surviving SETUPLDR's own allocations — the HAL
-   validates the header and the FAT boot sector, so a collision is a trace line, not garbage.
+```bash
+python3 tools/check-nt-layouts.py --kernel ntoskrnl.exe --kbdclass kbdclass.sys \
+        --mouclass mouclass.sys --i8042prt i8042prt.sys --floppy floppy.sys
+```
+
+Run it before trusting this driver on a kernel other than build 1381 (`fatcat.py` takes the files
+off an installed disk image).
+
+Still unverified, in order of likelihood of mattering:
+
+1. Which DLL exports what on another build. `KeAcquireSpinLock` from the kernel and `KeRaiseIrql`
+   from the HAL is how build 1381 has it, and the driver loads; a wrong guess on another build is
+   an unresolved import at load, not a silent fault.
+2. Whether `kbdclass` cares about the attributes we report beyond their size, and whether Setup's
+   key handling needs the E0 flags exactly as set. Every screen of Setup and the logon chord have
+   been driven from this driver, so whatever it needs, it gets.
+3. The OEM disk's physical address (`0x03B97000`) surviving SETUPLDR's own allocations on a
+   machine with a different memory size. The HAL validates the header and the FAT boot sector, so
+   a collision is a trace line, not garbage.
 
 Delivered under `[SCSI]` by `txtsetup.oem`; at the mass-storage screen, `S`, `Other`, Enter.

@@ -16,8 +16,13 @@
  * has the same shape for the same reason; ours is written to our own contract (oemdisk.h) and
  * our own HAL.
  *
- * STATUS: a draft, never loaded.  Every offset marked "verify" below is what the DDK says and
- * what the disassembled shipped drivers appear to use, but the first load will be the test. */
+ * STATUS: loaded and working since 16 September 2026 (text-mode and GUI Setup, the installed
+ * system's logon).  Every NT layout below is marked VERIFIED with the shipped routine it was read
+ * from -- the kernel's IoCreateDevice, IoInitializeIrp, IoBuildDeviceIoControlRequest,
+ * IofCompleteRequest and MmMapLockedPages, and kbdclass.sys, mouclass.sys, i8042prt.sys and
+ * floppy.sys -- all NT 4.0 build 1381 for PowerPC.  tools/check-nt-layouts.py re-reads those
+ * patterns from another build's binaries; docs/2026-11-05-adbport-layouts-verified.md has the
+ * evidence. */
 #pragma once
 #include "nt.h"
 #include "oemdisk.h"
@@ -29,7 +34,12 @@ typedef struct _KDEVICE_QUEUE { CSHORT Type, Size; LIST_ENTRY DeviceListHead; KS
 _Static_assert(sizeof(KDEVICE_QUEUE) == 20, "KDEVICE_QUEUE is 20 bytes on NT 4.0");
 
 /* NT 4.0's DEVICE_OBJECT, 0xB8 bytes.  Only the fields this driver reads or writes are named;
- * the rest keep their place.  verify: DeviceExtension 0x28, Flags 0x1C, StackSize 0x30. */
+ * the rest keep their place.  VERIFIED against the shipped kernel's IoCreateDevice (ntoskrnl.exe
+ * build 1381, image VA 0x800b56c4..0x800b5824): Type 3 at 0, Size at 2, Flags 0x1C,
+ * Characteristics 0x20, DeviceExtension 0x28 = object + 0xB8, DeviceType 0x2C, StackSize 0x30,
+ * Queue 0x34, AlignmentRequirement 0x5C, DeviceQueue 0x60, SectorSize 0xAC,
+ * DeviceObjectExtension 0xB0.  docs/2026-11-05-adbport-layouts-verified.md; re-check another
+ * build with tools/check-nt-layouts.py. */
 typedef struct _DEVICE_OBJECT {
     CSHORT Type, Size;                  /* 0x00 */
     LONG ReferenceCount;                /* 0x04 */
@@ -67,9 +77,11 @@ _Static_assert(sizeof(DEVICE_OBJECT) == 0xB8, "DEVICE_OBJECT is 0xB8 bytes on NT
 #define IRP_MJ_MAXIMUM_FUNCTION         0x1B
 
 /* NT 4.0's DRIVER_OBJECT, 0xA8 bytes.  The dispatch table holds { entry, toc } descriptors, so
- * every routine stored there goes through DEFINE_DESC (nt.h) -- see STORY.md wall 49.
- * verify: DriverName at 0x1C is what videoprt reads for its `\Driver\Vga` test, so that one is
- * confirmed from a shipped binary. */
+ * every routine stored there goes through DEFINE_DESC (nt.h) -- see docs/STORY.md wall 49.
+ * VERIFIED: DriverName at 0x1C is what videoprt reads for its `\Driver\Vga` test; DriverStartIo
+ * 0x30, DriverUnload 0x34 and MajorFunction at 0x38 are where kbdclass.sys's and floppy.sys's
+ * DriverEntry store their routines (kbdclass 0x123cc: CREATE 0x38, CLOSE 0x40, READ 0x44,
+ * FLUSH_BUFFERS 0x5C, DEVICE_CONTROL 0x70, CLEANUP 0x80). */
 typedef struct _DRIVER_OBJECT {
     CSHORT Type, Size;                  /* 0x00 */
     PDEVICE_OBJECT DeviceObject;        /* 0x04 */
@@ -90,7 +102,11 @@ _Static_assert(sizeof(DRIVER_OBJECT) == 0xA8, "DRIVER_OBJECT is 0xA8 bytes on NT
 
 /* NT 4.0's IO_STACK_LOCATION, 0x24 bytes.  The parameter union is 4-byte packed in NT's own
  * headers, which is why ByteOffset is two ULONGs here and not a LARGE_INTEGER the compiler would
- * align to 8.  verify: the 36-byte size; DeviceIoControl.IoControlCode at 0x0C. */
+ * align to 8.  VERIFIED: IoInitializeIrp sizes the stack as StackCount * 0x24 (0x800384e8);
+ * IoBuildDeviceIoControlRequest (0x800373ec..0x8003762c) writes MajorFunction at 0, Output- and
+ * InputBufferLength at 4 and 8, IoControlCode at 0xC, Type3InputBuffer at 0x10;
+ * IofCompleteRequest reads Control at 3, DeviceObject at 0x14, CompletionRoutine 0x1C, Context
+ * 0x20; i8042prt.sys reads IoControlCode at 0xC and CONNECT_DATA from 0x10 (0x10ff0). */
 typedef struct _IO_STACK_LOCATION {
     UCHAR MajorFunction, MinorFunction, Flags, Control;    /* 0x00 */
     union {
@@ -105,8 +121,11 @@ typedef struct _IO_STACK_LOCATION {
 } IO_STACK_LOCATION, *PIO_STACK_LOCATION;
 _Static_assert(sizeof(IO_STACK_LOCATION) == 0x24, "IO_STACK_LOCATION is 0x24 bytes on NT 4.0");
 
-/* NT 4.0's IRP, 0x70 bytes.  verify: IoStatus 0x18, SystemBuffer 0x0C, UserBuffer 0x3C,
- * Tail.Overlay.CurrentStackLocation 0x60. */
+/* NT 4.0's IRP, 0x70 bytes.  VERIFIED: IoInitializeIrp (0x800384ac..0x800384f4) writes Type 6 at
+ * 0, Size at 2, StackCount 0x22, CurrentLocation 0x23, ApcEnvironment 0x26, and
+ * CurrentStackLocation 0x60 = irp + 0x70 + StackCount * 0x24; IoBuildDeviceIoControlRequest
+ * writes MdlAddress 4, Flags 8, SystemBuffer 0xC, UserIosb 0x28, UserEvent 0x2C, UserBuffer
+ * 0x3C and Tail.Overlay.Thread 0x50; IofCompleteRequest takes IoStatus at 0x18. */
 typedef struct _IRP {
     CSHORT Type; USHORT Size;           /* 0x00 */
     PMDL MdlAddress;                    /* 0x04 */
@@ -136,12 +155,16 @@ static inline PVOID MmGetSystemAddressForMdl(PMDL Mdl);
 
 /* ---- the class-driver interfaces -------------------------------------------------------- */
 
+/* VERIFIED: kbdclass.sys steps its input queue by 0xC (divwu/mulli 0xc, 0x10e88); i8042prt.sys
+ * fills UnitId/MakeCode/Flags at 0/2/4 and ExtraInformation at 8 (0x10edc..0x11094). */
 typedef struct _KEYBOARD_INPUT_DATA { USHORT UnitId, MakeCode, Flags, Reserved; ULONG ExtraInformation; } KEYBOARD_INPUT_DATA, *PKEYBOARD_INPUT_DATA;
 _Static_assert(sizeof(KEYBOARD_INPUT_DATA) == 12, "KEYBOARD_INPUT_DATA is 12 bytes");
 #define KEY_MAKE  0
 #define KEY_BREAK 1
 #define KEY_E0    2
 
+/* VERIFIED: mouclass.sys steps by 0x18 (0x10e80); i8042prt.sys writes Flags at 2, ButtonFlags
+ * at 4, LastX/LastY at 0xC/0x10 and ExtraInformation at 0x14 (0x11c18..0x11c28). */
 typedef struct _MOUSE_INPUT_DATA { USHORT UnitId, Flags, ButtonFlags, ButtonData; ULONG RawButtons; LONG LastX, LastY; ULONG ExtraInformation; } MOUSE_INPUT_DATA, *PMOUSE_INPUT_DATA;
 _Static_assert(sizeof(MOUSE_INPUT_DATA) == 24, "MOUSE_INPUT_DATA is 24 bytes");
 #define MOUSE_MOVE_RELATIVE      0
@@ -151,9 +174,14 @@ _Static_assert(sizeof(MOUSE_INPUT_DATA) == 24, "MOUSE_INPUT_DATA is 24 bytes");
 #define MOUSE_RIGHT_BUTTON_UP    0x0008
 
 /* What kbdclass / mouclass hand a port driver on connect: their device, and the descriptor of
- * the routine that takes input packets -- called, per the DDK, at DISPATCH_LEVEL. */
+ * the routine that takes input packets -- called, per the DDK, at DISPATCH_LEVEL.  VERIFIED:
+ * kbdclass builds IOCTL 0xB0203 with an 8-byte input buffer (0x12db4), i8042prt checks
+ * InputBufferLength == 8 and copies the two words from Type3InputBuffer (0x10fd8..0x1100c). */
 typedef struct _CONNECT_DATA { PDEVICE_OBJECT ClassDeviceObject; PVOID ClassService; } CONNECT_DATA, *PCONNECT_DATA;
 
+/* VERIFIED sizes, from i8042prt.sys's buffer-length checks: KEYBOARD_ATTRIBUTES 0x1C (0x10dc8),
+ * typematic parameters 6 (0x10e30), KEYBOARD_INDICATOR_PARAMETERS 4 (0x10e8c),
+ * MOUSE_ATTRIBUTES 0xC (0x11060). */
 typedef struct _KEYBOARD_ATTRIBUTES {
     UCHAR KeyboardIdentifierType, KeyboardIdentifierSubtype;
     USHORT KeyboardMode, NumberOfFunctionKeys, NumberOfIndicators, NumberOfKeysTotal;
@@ -163,7 +191,9 @@ typedef struct _KEYBOARD_ATTRIBUTES {
 typedef struct _KEYBOARD_INDICATOR_PARAMETERS { USHORT UnitId, LedFlags; } KEYBOARD_INDICATOR_PARAMETERS;
 typedef struct _MOUSE_ATTRIBUTES { USHORT MouseIdentifier, NumberOfButtons, SampleRate, Pad; ULONG InputDataQueueLength; } MOUSE_ATTRIBUTES;
 
-/* CTL_CODE(type, function, method, access) = (type << 16) | (access << 14) | (function << 2) | method */
+/* CTL_CODE(type, function, method, access) = (type << 16) | (access << 14) | (function << 2) | method
+ * VERIFIED: every keyboard code below is built by i8042prt.sys (lis 0xb / ori), the two connects
+ * by kbdclass.sys and mouclass.sys, and IS_WRITABLE, CHECK_VERIFY and FORMAT_TRACKS by floppy.sys. */
 #define IOCTL_INTERNAL_KEYBOARD_CONNECT     0x000B0203
 #define IOCTL_INTERNAL_KEYBOARD_DISCONNECT  0x000B0403
 #define IOCTL_INTERNAL_KEYBOARD_ENABLE      0x000B0803
@@ -187,6 +217,8 @@ typedef struct _MOUSE_ATTRIBUTES { USHORT MouseIdentifier, NumberOfButtons, Samp
 #define IOCTL_DISK_CHECK_VERIFY             0x00074800
 #define IOCTL_DISK_GET_MEDIA_TYPES          0x00070C00
 
+/* VERIFIED: floppy.sys checks the geometry buffer against 0x18 (0x13a30) and fills 0x200 for
+ * BytesPerSector. */
 typedef struct _DISK_GEOMETRY { LARGE_INTEGER Cylinders; ULONG MediaType, TracksPerCylinder, SectorsPerTrack, BytesPerSector; } DISK_GEOMETRY, *PDISK_GEOMETRY;
 _Static_assert(sizeof(DISK_GEOMETRY) == 24, "DISK_GEOMETRY is 24 bytes");
 #define F3_1Pt44_512 2
@@ -249,6 +281,9 @@ VOID HalDisplayString(PCHAR String);
 /* thunk.S: call a { entry, toc } descriptor with four arguments -- how the class service is reached */
 ULONG AdbCallDesc4(PVOID Desc, ULONG a1, ULONG a2, ULONG a3, ULONG a4);
 
+/* MDL (nt.h): VERIFIED against MmMapLockedPages (0x8004df94..0x8004e128): MdlFlags at 6, where it
+ * sets MDL_MAPPED_TO_SYSTEM_VA (1); MappedSystemVa at 0xC, which it writes; StartVa, ByteCount
+ * and ByteOffset at 0x10, 0x14, 0x18, which it reads. */
 static inline PVOID MmGetSystemAddressForMdl(PMDL Mdl)
 {
     if (Mdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL)) return Mdl->MappedSystemVa;

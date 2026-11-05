@@ -1,8 +1,14 @@
 # Windows NT 4.0 HAL for the Apple Network Server (and TNT-class Power Macintosh) — project charter and onboarding
 
+> **History.** This is the charter as written on 5 September 2026 and kept current through
+> the install, with completed items struck through. It is the plan the work followed, not a
+> description of the result: for that read the [README](../README.md), and for running it
+> [`HOWTO.md`](HOWTO.md). Sections 3.1 and 7 describe the poke-and-checkpoint rig the boot
+> floppy retired on 15 September.
+
 *The project's standing document, started 2026-09-05 and kept current. Written to be read
 cold, by a person or an agent with none of the history, and to link to everything they need.
-For the narrative — every wall and how it fell — read [`../STORY.md`](../STORY.md) first; for
+For the narrative — every wall and how it fell — read [`STORY.md`](STORY.md) first; for
 what the project is and how to build it, [`../README.md`](../README.md).*
 
 ---
@@ -57,7 +63,7 @@ reason.
 
 | What | Where |
 |---|---|
-| **The story so far, wall by wall** — the narrative version of this document, and the best entry point if you want the *why* | [`STORY.md`](../STORY.md) |
+| **The story so far, wall by wall** — the narrative version of this document, and the best entry point if you want the *why* | [`STORY.md`](STORY.md) |
 | Session write-ups, in order | [`docs/`](.) — see [`docs/README.md`](../README.md) |
 | The HAL itself | [`src/`](../src/), [`include/`](../include/), [`Makefile`](../Makefile), [`hal.exports`](../hal.exports), [`hal.imports`](../hal.imports), [`hal.ld`](../hal.ld) |
 | Build and test tooling, and how the loop works | [`tools/`](../tools/), [`tools/README.md`](../tools/README.md) |
@@ -190,7 +196,7 @@ State on 2026-09-05:
     address 2, mouse at 3) and a real keystroke reaches its callback. Setup gets past the
     keyboard check and launches `usetup.exe`, which then cannot load its keyboard **layout**
     DLL.
-17. *(2026-09-06 night, [STORY.md](../STORY.md) walls 31-32)* **Setup runs.** `usetup.exe`'s
+17. *(2026-09-06 night, [STORY.md](STORY.md) walls 31-32)* **Setup runs.** `usetup.exe`'s
     *"could not load the keyboard layout file KBDUS.DLL"* was not a file problem: it loads the
     layout itself with `LdrLoadDll` and a **rooted** DOS path, which resolves against the
     current drive — and there were no drives, because `IoAssignDriveLetters` (a HAL export) was
@@ -199,7 +205,7 @@ State on 2026-09-05:
     letter (`\Device\CdRom0` -> `D:`, system path `D:\PPC\`). Setup then reaches **"Welcome
     to Setup"**, the mass-storage list, the licence agreement and the hardware-confirmation
     screen (screenshots in [`traces/`](../traces/), `2026-09-06-setup-01-welcome.png` onward).
-18. *(2026-09-06 night, [STORY.md](../STORY.md) walls 32-35)* **Setup reaches its partition
+18. *(2026-09-06 night, [STORY.md](STORY.md) walls 32-35)* **Setup reaches its partition
     screen.** Four more walls behind *"No valid system partitions are defined on this
     computer"*. `IoReadPartitionTable`, `IoWritePartitionTable` and `IoSetPartitionInformation`
     are HAL exports too, and were stubs, so every disk read back with no partitions —
@@ -214,7 +220,7 @@ State on 2026-09-05:
     an ARC machine's firmware vendor would ship. Setup now lists
     `C: FAT 6 MB (5 MB free)` and offers to install; the only thing left is that the emulated
     disk is 8 MB and NT wants 158.
-19. *(2026-09-07, [`../STORY.md`](../STORY.md) walls 36-40, [`docs/2026-09-07-partitions-and-arc-environment.md`](2026-09-07-partitions-and-arc-environment.md))* **Setup partitions, formats and
+19. *(2026-09-07, [`STORY.md`](STORY.md) walls 36-40, [`docs/2026-09-07-partitions-and-arc-environment.md`](2026-09-07-partitions-and-arc-environment.md))* **Setup partitions, formats and
     starts installing.** On a 512 MB disk Setup lists the partitions, creates one in the free
     space, formats it, takes `\WINNT` as the install directory, skips the surface scan and
     reaches *"Creating directory \WINNT…"*. `IoWritePartitionTable` had to learn the whole
@@ -543,7 +549,7 @@ somewhere documented.
   opens each `\Device\Harddisk%d\Partition0` with `IoGetDeviceObjectPointer` and assigns in
   NT's order.
 - **The HAL's own identity (solved, wall 44).** The HAL no longer impersonates
-  `HALEAGLE.DLL`: `tools/mkoem.py` adds a `[Computer]`/`[Hal.Load]`/`[hal]` entry of its own,
+  `HALEAGLE.DLL`: `tools/attic/mkoem.py` adds a `[Computer]`/`[Hal.Load]`/`[hal]` entry of its own,
   so Setup offers *"Apple Network Server 500/700"* and installs `HALSHINR.DLL`. This also
   retired the checksum failure that impersonation caused during the copy phase.
 - **The current wall is whatever the copy phase reaches.** Setup is copying Windows NT to the

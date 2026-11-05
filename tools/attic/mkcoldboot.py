@@ -28,6 +28,7 @@ user's own, and the generator only types firmware commands.
 import argparse, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))  # the live tools
 from mkbootscript import adb_char_statements          # per-character down/wait/up on ADB
 
 OF_STAGE_00 = ['setenv little-endian? true', 'setenv real-mode? false',

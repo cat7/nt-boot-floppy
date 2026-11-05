@@ -1,65 +1,58 @@
 # tools — build, deliver and run the HAL on the emulated Network Server
 
 Everything here talks to a stock Granny Smith headless emulator over its TCP shell; nothing
-links against it. The reference emulator build is noted in [`../docs/CHARTER.md`](../docs/CHARTER.md) §3.
+links against it. Setting the emulator up is [`../docs/EMULATOR.md`](../docs/EMULATOR.md).
 
 | tool | what it does |
 |---|---|
 | `elf2pe.py` | lld ELF (PowerPC LE, `--emit-relocs`) → NT PowerPC PE with descriptors, imports (IAT pre-filled with the name RVAs, as NT's boot loader requires), base relocations, checksum |
 | `mkstubs.py` | generates `imports.S` (IAT slots + descriptor-call stubs) and `exports.S` (function descriptors) from `hal.imports` / `hal.exports` |
 | `pe-exports.py` | prints machine, sections, exports and import counts of any NT PE (used to read the shipped HALs) |
-| `patch-iso.py` | writes `hal.dll` into an ISO 9660 image over an existing file's extent, in place |
 | `gsh.py` | minimal TCP client for the emulator daemon (`GS_PORT`, `GS_TIMEOUT`, `GS_IDLE`) |
 | `ppcdis.py` | a PowerPC disassembler, enough of one to read an NT 4.0 PowerPC PE. Vendored from this project author's own research tools so `pe-dis.py` works from a clean checkout (see PROVENANCE.md); imported, not run directly |
 | `pe-dis.py` | PowerPC disassembler for an NT PE, annotating branch targets, imports and TOC-relative loads (`TOC=<hex>` names the anchor; take it from the entry descriptor's second word) — this is how the kernel's and the shipped drivers' structure layouts were read |
+| `pe-fn.py` | disassembles one routine of an NT PowerPC PE by **export name** (or by the hex address of a descriptor, e.g. a driver's entry point): resolves the `{entry, toc}` descriptor and runs `pe-dis.py` from the entry with that TOC. `pe-fn.py ntoskrnl.exe IoCreateDevice 700` is how `DEVICE_OBJECT` was read |
+| `check-nt-layouts.py` | checks every NT structure layout in `drivers/adbport/adbport.h` against the code of a shipped kernel and of `kbdclass.sys`, `mouclass.sys`, `i8042prt.sys` and `floppy.sys`, as instruction patterns; 21 rows, each naming what it proves. Run it on the binaries of any build other than 1381 before trusting the driver there ([`docs/2026-11-05-adbport-layouts-verified.md`](../docs/2026-11-05-adbport-layouts-verified.md)) |
 | `run-hal.py` | from a checkpoint at Setup's computer-type menu: picks *MOTOROLA PowerStack*, Enter at mass storage, the Cirrus entry at video, then runs the kernel; `--save` keeps the end state, `--screenshot` grabs the monitor. Diagnosis: `--scsi-log`; `--poke addr=value` right after the checkpoint load (veneer patches); `--bp <va>` breakpoints, with `--peek <va \| r1+0x9bc>`, `--deref <addr>` (follow the pointer there and dump 12 words) and `--onbreak "<statement>"` (any shell statement, e.g. a poke into code that only exists once the kernel has loaded it) reported at every stop; `--adb-key <text>` types it on the emulated ADB keyboard once per kernel-phase chunk, which is how the ADB path was proved end to end; `--computer-ups N` says how many Up presses reach the computer type to select (5 = MOTOROLA PowerStack on a stock CD, 3 = the slot `mkoem.py` repurposes); `--adb-then <text|#code>` types a key and screenshots after it, repeatable, for walking Setup screen by screen (`#` prefixes a raw ADB key code: `#121` Page Down, `#100` F8); `--disk-delta <delta>=<raw.img>` splices a prepared disk image into a writable image's copy-on-write delta after the checkpoint load |
-| `mkoem.py` | gives the HAL a computer type and a filename of its own in a user's CD image: rewrites `TXTSETUP.SIF` (same length — the substitutions net to zero) so Setup's hardware menu offers *"Apple Network Server 500/700"* and loads/installs `halshinr.dll`, and patches the `\PPC` directory record `HALEAGLE.DLL` -> `HALSHINR.DLL` with the HAL's real length. **Re-run it whenever `hal.dll` changes size**, or Setup's post-copy checksum will disagree |
-| `mkpatchediso.py` | one command from a user's stock NT 4.0 PowerPC CD to a bootable pair: a patched ISO and a staging image holding the patched veneer. Locates `\PPC` by walking the image rather than trusting LBAs, checks the Primary Volume Descriptor and refuses a CD that lacks the files these patches were made for, and applies `mkveneer.py`'s output to the veneer **from that CD's own extent**. Every write is length-neutral inside an extent the image already has, so no ISO authoring is involved and no directory record moves — the same five writes would work on a browser's ArrayBuffer. `--kbd` takes a replacement `\PPC\I8042PRT.SYS`; it is an option, not a default, because that driver is not ours to redistribute |
-| `mkcoldboot.py` | the script that boots Setup from a **cold machine** and a patched CD with no pokes and no breakpoints — power on, four firmware steps, Setup's computer-type menu. Reads every patch site back out of guest memory after layout and prints it against what was wanted, which is what distinguishes "the image is unpatched" from "the patch is at the wrong address" |
-| `mkveneer.py` | bakes ledger rows 1-5 into `VENEER.EXE` as **file** patches instead of memory pokes: the two `claim` `nop`s, `OFClose`'s nret, the blanked `partition(1)`/`:0` strings, the `NCR,53C810` -> `NCR,825A` SCSI identifier, and (with `--for cd`) `VrOpen`'s whole-device route, which is wrong for a disk. Every site's shipped word is verified before it is written, so it refuses an image these addresses were not derived from. `--stage img[@block]` also writes the result to a raw disk at the block the ROM's `pe-loader` reads from (default `0x800`). The point is a cold boot that needs only the four firmware steps and no pokes — `CHARTER.md` §3.1's "better answer than 'type these into Open Firmware'" |
-| `mkbootfloppy.py` | builds the 1.44 MB FAT12 floppy of [`docs/2026-09-15-the-boot-floppy.md`](../docs/2026-09-15-the-boot-floppy.md): the patched veneer, `SETUPLDR`, this project's HAL as `HALSHINR.DLL`, its ADB/OEM-disk driver `ADBPORT.SYS` (`build/adbport.sys` by default, offered to Setup under `[SCSI]`), the display driver with ledger row 6 applied, a `txtsetup.oem`, and two Open Firmware scripts — `SETUP.OF` (once per machine) and `BOOT.OF` (every boot), which take the typing from twenty-eight lines to two. The veneer is allocated **first**, so it starts at cluster 2 and is contiguous for `read-blocks`. `BOOT.OF` also reads the *whole* disk into RAM and writes the header `include/oemdisk.h` describes, which is how the OEM files reach Setup's copy phase under NT (NT has no SWIM3 driver). Every Microsoft file is named on the command line and comes from the user's own media |
+| `mkveneer.py` | (history: the veneer is no longer used) bakes ledger rows 1-5 into `VENEER.EXE` as **file** patches instead of memory pokes: the two `claim` `nop`s, `OFClose`'s nret, the blanked `partition(1)`/`:0` strings, the `NCR,53C810` -> `NCR,825A` SCSI identifier, and (with `--for cd`) `VrOpen`'s whole-device route, which is wrong for a disk. Every site's shipped word is verified before it is written, so it refuses an image these addresses were not derived from. `--stage img[@block]` also writes the result to a raw disk at the block the ROM's `pe-loader` reads from (default `0x800`). The point is a cold boot that needs only the four firmware steps and no pokes — `CHARTER.md` §3.1's "better answer than 'type these into Open Firmware'" |
+| `mkfloppy.py` | **the one command**: `make floppy` runs it. Lays out the floppy (`mkbootfloppy.py`) with the HAL, the ADB driver and the ARC firmware `make` built; nothing comes off any CD since 5 November 2026 (`--iso` is accepted and ignored) |
+| `isocat.py` | reads one file out of an ISO 9660 image by path; unpacks the single-file Microsoft Cabinet NT stores `CIRRUS.DL_` in, so the caller asks for `CIRRUS.DLL` |
+| `savedisk.py` | lays the emulator's copy-on-write delta (the store's `GSDL` layout) over a base image to capture an installed disk; `--check` walks the FAT and reports every file whose cluster chain is shorter than its size |
+| `mkbootfloppy.py` | builds the 1.44 MB FAT12 floppy of [`docs/2026-09-15-the-boot-floppy.md`](../docs/2026-09-15-the-boot-floppy.md): this project's ARC firmware as `ARCFW.EXE` (`--arc-firmware`; both `BOOT.OF` and `BOOTDISK.OF` read it; `--veneer`/`--disk-veneer` are the old Microsoft route), its HAL as `HALSHINR.DLL`, its ADB/OEM-disk driver `ADBPORT.SYS` (`build/adbport.sys` by default, offered to Setup under `[SCSI]`), optionally a display pair (`--display-driver`/`--display-dll`; no longer needed since the HAL translates the legacy VGA window), a `txtsetup.oem`, and three Open Firmware scripts — `SETUP.OF` (once per machine), `BOOT.OF` (every boot, to install) and `BOOTDISK.OF` (to start the installed system) — which take the typing from twenty-eight lines to two. The veneer is allocated **first**, so it starts at cluster 2 and is contiguous for `read-blocks`. `BOOT.OF` also reads the *whole* disk into RAM and writes the header `include/oemdisk.h` describes, which is how the OEM files reach Setup's copy phase under NT (NT has no SWIM3 driver). Every Microsoft file is named on the command line and comes from the user's own media |
 | `mkarcdisk.py` | writes an MBR and an empty FAT16 system partition onto a raw disk image — what an ARC machine's `ARCINST.EXE` would do, which the Network Server's Open Firmware has no equivalent of. Setup will not start without a FAT partition with 750 KB free on the boot disk |
 | `restamp-ckpt.py` | rewrites a checkpoint's 20-byte build ID so a rebuilt emulator will load it. Only when the rebuild changed no checkpointed structure — but then it turns a ten-minute cold boot back into a two-minute iteration |
 | `gen-probe.py` | the phase 0 menu probes (see `docs/2026-09-05-phase0-probes.md`) |
-| `mkbootscript.py` | generates the script that boots the **installed** system from disk (`--bp ADDR[:COND]` adds a diagnostic breakpoint that reports the exception and call registers on every hit — a condition on `machine.cpu.dar` is how wall 49's one fault was picked out of a boot's thousands; `--watch ADDR` logs writes to one address): the veneer restores walls 46 and 47 need, `/chosen bootpath`, the ten-variable ARC environment injected at OSLOADER's first lookup (this machine has no ARC NVRAM), then the run loop. Reads the two restored ranges out of *your* `VENEER.EXE`, so no Microsoft code is stored here — the same arrangement `mkoem.py` uses for a CD image |
-| `run-boot.py` | runs one of those scripts against an installed disk image, splicing it into the checkpoint's copy-on-write delta after the load (a checkpoint's disk is a fresh delta; edits to the base image are never read) |
 | `coffsyms.py` | reads a **raw NT PowerPC COFF** image's header, sections and symbol table. `VENEER.EXE` and `OSLOADER.EXE` are not PEs — no MZ stub — and both shipped with their symbol tables intact (1,512 and 2,135 symbols, including every string constant's mangled `??_C@` name). `pe-dis.py` cannot open them; this can. Importable as `Coff` |
 | `coffdis.py` | `pe-dis.py`'s counterpart for those two: disassembles a COFF image, labelling functions and branch targets from the symbol table. How `VrOpen`, `BlOsLoader` and `BlLoadSystemHive` were read (see `docs/2026-09-07-booting-the-installed-disk.md`) |
 | `fatls.py` | lists the FAT16 partitions of an MBR disk image and walks their directories, from the host, with nothing mounted — `mount -o loop` is unavailable in a container and `mtools` is not worth a dependency. How an install is checked after the fact |
 | `fatcat.py` | extracts one file from such an image (this is how `\OS\WINNT40\HAL.DLL` was confirmed byte-identical to `build/hal.dll`) |
 | `fatput.py` | replaces one file's contents, **growing or shrinking its cluster chain**. Two jobs: restoring a hive from its own `.SAV` copy the way NT's repair option does (wall 48), and dropping a freshly built `hal.dll` onto an installed system — which is the iteration loop for everything after text-mode Setup, since a rebuilt HAL is never the size Setup copied |
 
-## The delivery loop (emulator)
+## The delivery loop
 
-1. Build: `make` → `build/hal.dll`.
-2. The test ISO is the user's NT 4.0 PowerPC CD with `\PPC\HALEAGLE.DLL` overwritten by
-   `hal.dll` (`patch-iso.py <cd.iso> <test.iso> PPC/HALEAGLE.DLL hal.dll`, then in place on
-   later iterations). Setup loads it when *MOTOROLA PowerStack* is chosen; no `TXTSETUP.SIF`
-   edit is needed for the emulator loop.
-3. **Know that a checkpoint freezes the CD.** Granny Smith's consolidated checkpoints snapshot
-   every attached image, and a restore fills the read-only image's scratch delta
-   (`/tmp/gs-image-ro/<id>.delta`) with all blocks flagged, so the guest reads the CD as it was
-   at save time. `run-hal.py --delta-patch hal.dll` therefore loads the checkpoint, writes the
-   new HAL into the restored delta at the file's extent, and only then presses the keys.
-4. Make the menu checkpoint once (cold boot, ~10 min): the emulator project's
-   `repro-hal-menu` recipe with the CD path changed, the veneer's `OFClose` fix poked in before
-   `go`, and `checkpoint.save` when *Select the computer type* appears.
-5. Iterate: `patch-iso.py` in place → `run-hal.py --ckpt <menu.ckpt> --iso <test.iso> --out log`
-   (~2 min at turbo speed, ~10 with a breakpoint). The cleaned console lands in `log.txt`.
+1. Build: `make` → `build/hal.dll`, `build/adbport.sys` and `build/arcfw.exe`.
+2. Floppy: `make floppy` → `build/boot-floppy.img`. Rebuild it whenever any of the three
+   changes; the copies on the floppy are the ones Setup and the firmware load.
+3. Disk: `make disk` → `build/nt-disk.img`, once.
+4. Run: the three Open Firmware lines in [`../docs/HOWTO.md`](../docs/HOWTO.md). The CD is
+   attached read-only and never written.
 
-**Delivering a driver, not just the HAL.** SETUPLDR loads the keyboard by *file name*, outright,
-so a keyboard driver goes onto the CD over `\PPC\I8042PRT.SYS` and `[files.i8042]` in
-TXTSETUP.SIF goes back to `i8042prt.sys,4`. TXTSETUP.SIF is parsed long before the menu
-checkpoint, so changing it needs a cold boot from `nt-pre-go.ckpt` with the delta patched there
-(`tmp/hal/run-mkkbd.py`); the driver file itself can be delta-patched per run like the HAL.
-**Pad to the slot and recompute the PE checksum**: SETUPLDR checksums over the length in the ISO
-directory record, so a short file plus zero padding is *"The file … is corrupted"*.
+**Iterating on an installed system** without re-running Setup: the loader takes `HAL.DLL` from
+the ARC system partition (partition 1), so `fatput.py <disk.img> 1 '\OS\WINNT40\HAL.DLL'
+build/hal.dll` drops a rebuilt HAL onto it; `fatput.py` grows or shrinks the cluster chain.
+`savedisk.py` captures the emulator's delta over the base image when a run is worth keeping.
 
-Gotchas met on the way: keys go one byte per `machine.scc.a.receive`; the daemon's
-`machine.scsi` name is shadowed by a static helper object, so the CD cannot be swapped live
-(`machine.scsi.device[N].eject/insert` is unreachable); `machine.memory.peek/poke` are physical
-and little-endian mode puts the word at A at `A ^ 4` (`(va & 0x7fffffff) ^ 4` reaches both KSEG0
-and the low addresses SETUPLDR's stack lives at, but *not* paged-pool addresses like
-`0xEE5xxxxx`, which nothing here can read); a breakpoint makes the whole run single-step, so a
-diagnostic run takes about ten minutes rather than two; and a checkpoint records the build ID
-of the emulator that wrote it and is refused by any other build (`restamp-ckpt.py`).
+**Reading the shipped binaries.** `pe-exports.py` for a PE's exports and imports, `pe-dis.py` for
+its code (give it the TOC from the entry descriptor's second word), `coffsyms.py` and `coffdis.py`
+for `VENEER.EXE` and `OSLOADER.EXE`, which are raw COFF images with their symbol tables intact.
+This is how every NT structure layout in `include/nt.h` and `drivers/adbport/adbport.h` was read:
+from the shipped code's own field offsets, never from a header.
+
+Gotchas met on the way: keys go one byte per `machine.scc.a.receive`; `machine.memory.peek/poke`
+are physical and little-endian mode puts the word at A at `A ^ 4`; a breakpoint makes the whole
+run single-step, so a diagnostic run takes about ten minutes rather than two; and a checkpoint
+records the build ID of the emulator that wrote it and is refused by any other build
+(`restamp-ckpt.py`).
+
+The tools of the patched-CD era, which edited the user's disc instead of using a floppy, are in
+[`attic/`](attic/README.md).

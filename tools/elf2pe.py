@@ -83,8 +83,12 @@ def pe_checksum(data):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('elf'); ap.add_argument('out')
-    ap.add_argument('--exports', required=True); ap.add_argument('--dllname', default='HAL.dll')
+    ap.add_argument('--exports', help='the .exports file; may be omitted with --raw-coff'); ap.add_argument('--dllname', default='HAL.dll')
     ap.add_argument('--entry', default='desc_HalInitSystem')
+    ap.add_argument('--raw-coff', action='store_true',
+                    help='no MZ stub and no PE signature: the file starts with the COFF header, the shape of '
+                         "Microsoft's VENEER.EXE and OSLOADER.EXE, which Open Firmware's pe-loader and NT's own "
+                         'ARC loaders take (an MZ-headed PE is what NT\'s kernel-side loader takes)')
     ap.add_argument('--import-dll', action='append', default=None,
                     help='one per import group in the .imports file, in order (default: ntoskrnl.exe)')
     ap.add_argument('--section-align', type=lambda x: int(x, 0), default=0x1000)
@@ -97,7 +101,10 @@ def main():
     alloc = [s for s in elf.sections if (s['flags'] & 2) and s['type'] in (1, 8) and s['size']]
     alloc.sort(key=lambda s: s['addr'])
     base = min(s['addr'] for s in alloc) & ~(SA - 1)
-    image_base = base - SA  # headers occupy the first page below the first section
+    # A PE's headers occupy the first page below the first section.  A raw COFF has no mapped
+    # headers at all: pe-loader lays each section at ImageBase + its RVA and starts at ImageBase,
+    # so the first section is linked at ImageBase and RVA 0 is code (the veneer's shape).
+    image_base = base if a.raw_coff else base - SA
     def rva(addr): return addr - image_base
     # PE section descriptors: name, rva, vsize, data(bytes), chars
     pesecs = []
@@ -124,11 +131,15 @@ def main():
                                data_end_is_vsize=bool(data)))
     for p in pesecs:
         p['rva'] = rva(p['addr'])
+        if a.raw_coff and len(p['data']) < p['vsize']:
+            # pe-loader copies what is in the file and claims no more: a raw COFF carries its
+            # bss as zeros, as the veneer's does (its .bss has 0x800 bytes of file behind it)
+            p['data'] = p['data'].ljust(p['vsize'], b'\0')
 
     syms = elf.byname
     # --- exports ---------------------------------------------------------------------
     exports = []  # (name, address)
-    for line in open(a.exports):
+    for line in (open(a.exports) if a.exports else []):
         line = line.split('#')[0].strip()
         if not line: continue
         parts = line.split()
@@ -145,7 +156,7 @@ def main():
     marks = sorted([s['value'] for s in elf.symbols if s['name'].startswith('__impgrp_') and s['shndx'] not in (0, 0xfff1)])
     if imps and not marks: marks = [imps[0]['value']]          # an imports.S from before groups existed
     groups = []                                                  # [(dll, [slot symbols]), ...]
-    dlls = a.import_dll or ['ntoskrnl.exe']
+    dlls = a.import_dll or (['ntoskrnl.exe'] if marks else [])
     if len(dlls) != len(marks):
         sys.exit(f'elf2pe: {len(marks)} import group(s) in the ELF but {len(dlls)} --import-dll name(s)')
     for gi, start in enumerate(marks):
@@ -243,12 +254,23 @@ def main():
     end_rva = reloc_rva + align(len(reloc), SA)
     # --- headers -----------------------------------------------------------------------
     nsec = len(pesecs)
-    size_headers = align(0x80 + 4 + 20 + 0xE0 + 40 * nsec, FA)
+    stub = 0 if a.raw_coff else 0x80 + 4                    # MZ stub and 'PE\0\0', or nothing
+    size_headers = align(stub + 20 + 0xE0 + 40 * nsec, FA)
     file_off = size_headers
     for p in pesecs:
+        if a.raw_coff:
+            # The ROM's pe-loader lays the file out flat: byte SizeOfHeaders + n of the file
+            # lands at ImageBase + n, whatever the section table says.  The veneer is built that
+            # way (every section's PointerToRawData is its RVA + 0x200), and a first arcfw that
+            # was not had its .rdata strings land in .text's padding and its .data a page off --
+            # Open Firmware answered every client-interface call with -1 because the service
+            # name it was handed read as "" (probe of 5 November).  So each section's raw data
+            # is padded to its RVA stride, and the file is an image of memory.
+            p['data'] = p['data'].ljust(align(p['vsize'], SA), b'\0')
         p['raw_size'] = align(len(p['data']), FA)
         p['raw_off'] = file_off if p['raw_size'] else 0
         file_off += p['raw_size']
+        assert not a.raw_coff or p['raw_off'] == size_headers + p['rva'], (p['name'], p['raw_off'], p['rva'])
     text = [p for p in pesecs if p['name'] == '.text'][0]
     datas = [p for p in pesecs if p['chars'] & 0x40 and p['name'] != '.text']
     entry_sym = syms.get(a.entry)
@@ -274,14 +296,14 @@ def main():
     sect = b''
     for p in pesecs:
         sect += struct.pack('<8sIIIIIIHHI', p['name'].encode().ljust(8, b'\0'), p['vsize'], p['rva'], p['raw_size'], p['raw_off'], 0, 0, 0, 0, p['chars'])
-    hdr = bytes(dos) + b'PE\0\0' + coff + opt + sect
+    hdr = (b'' if a.raw_coff else bytes(dos) + b'PE\0\0') + coff + opt + sect
     out = bytearray(hdr.ljust(size_headers, b'\0'))
     for p in pesecs:
         if p['raw_size']:
             assert len(out) == p['raw_off']
             out += p['data'].ljust(p['raw_size'], b'\0')
     cs = pe_checksum(bytes(out))
-    struct.pack_into('<I', out, 0x80 + 4 + 20 + 64, cs)
+    struct.pack_into('<I', out, stub + 20 + 64, cs)
     open(a.out, 'wb').write(out)
     print(f'{a.out}: base {image_base:#x} image {end_rva:#x} entry rva {rva(entry_sym["value"]):#x} '
           f'{len(exports)} exports {len(imps)} imports {len(fixups)} fixups checksum {cs:#x}')

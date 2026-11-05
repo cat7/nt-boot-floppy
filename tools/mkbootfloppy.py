@@ -11,10 +11,14 @@ so the user's Windows NT CD can be used exactly as it was pressed.
                           contiguous: Open Firmware reads it with `read-blocks` off the raw
                           device long before anything can parse a filesystem, and a contiguous
                           extent at a known block is the only thing that makes that possible.
-  * `\\PPC\\SETUPLDR`     NT's text-mode Setup loader, copied from the user's own CD.
+  * `\\PPC\\VENEERD.EXE`  the same, patched for booting the installed disk instead (`--for disk`).
   * `\\HALSHINR.DLL`     this project's HAL, in the **root**, because that is where a
                           `[Disks]` line's directory field points Setup.
-  * `\\I8042PRT.SYS`     the ADB keyboard driver that stands in for the one NT expects.
+  * `\\ADBPORT.SYS`      this project's ADB keyboard/mouse driver, which also serves this disk's
+                          image to Setup from RAM as `\\Device\\Floppy0`.
+  * `\\CIRRUS.SYS`, `\\CIRRUS.DLL`  the display pair off the user's CD, the miniport with
+                          ledger row 6 applied (`--vga-aperture`).
+  * `\\SETUP.OF`, `\\BOOT.OF`, `\\BOOTDISK.OF`  the three Open Firmware scripts.
   * `\\TXTSETUP.OEM`     the OEM description that offers the HAL as a computer type (C2), and
                           -- with `--display-driver` -- a display type as well, which is how
                           ledger row 6 reaches a boot that applies no pokes.
@@ -23,11 +27,13 @@ Nothing from Microsoft is stored in this repository: every file above is named o
 line and comes from the user's own media.  The tool writes an image; it ships no content.
 
     mkbootfloppy.py --out tmp/boot.img \\
-        --veneer <PPC/VENEER.EXE> --setupldr <PPC/SETUPLDR> \\
-        --hal build/hal.dll --kbd <i8042prt replacement>
+        --veneer <veneer-fd.exe> --disk-veneer <veneer-disk.exe> --hal build/hal.dll \\
+        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
 
-It prints the veneer's start block and length in blocks, which is what
-`mkcoldboot.py --veneer-dev /bandit/gc/swim3 --veneer-block N --veneer-blocks M` needs.
+`mkfloppy.py` (and `make floppy ISO=<cd>`) runs this with the files it took off the CD.  SETUPLDR
+is **not** on the disk: the veneer loads it from the CD, which is the boot device.  `--setupldr`
+puts a copy at `\\PPC\\SETUPLDR` only for the boot-*from*-the-floppy arrangement of the plan's
+section 2.2, a dead end that is kept for section 7.
 """
 import argparse, os, re, struct, sys
 
@@ -181,9 +187,12 @@ driver = d1, i8042prt.sys, i8042prt
 [Config.i8042prt]
 """
 
-# The display class exists for one reason: ledger row 6.  cirrus.sys claims the legacy VGA
-# aperture, which is RAM on this board, VideoPortVerifyAccessRanges reports the conflict, and
-# Setup dies initialising video (wall 25).
+# The display class existed for one reason: ledger row 6.  cirrus.sys claims the legacy VGA
+# aperture at 0xA0000, the HAL refused to translate it (RAM, on this board), and Setup died
+# initialising video (wall 25); the fix was a copy of cirrus.sys with the claim moved, which only
+# an OEM disk could deliver.  Since 5 November 2026 the HAL translates 0xA0000 onto the 54M30's
+# legacy-window mirror and the stock cirrus.sys on the CD works, so mkfloppy.py no longer puts
+# the pair on the disk.  The options stay for anyone who wants to try another miniport.
 #
 # There is exactly one `driver =` line because SETUPLDR loads exactly one image per OEM class --
 # SlInit calls SlLoadOemDriver once after SlPromptOemVideo -- and it takes the *first* file key
@@ -329,8 +338,13 @@ def oemdisk_constants():
 
 
 def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_blocks,
-                stage=0x3D00000, load=0x3E00000):
-    """disk_blocks: the whole floppy, 2880 for 1.44 MB.  It is read into RAM behind the veneer so
+                stage=0x3D00000, load=0x3E00000, firmware='VENEER.EXE', env=None):
+    """disk_blocks: the whole floppy, 2880 for 1.44 MB.
+
+    firmware: which image the blocks hold.  With ARCFW.EXE (this project's own ARC firmware)
+    the ARC environment `env` is set on /options for this boot, as bootdisk.of does: arcfw boots
+    whatever OSLOADER names, and for the install that is \\PPC\\SETUPLDR on the CD.  The veneer
+    needs no environment for the CD boot and must not be given one (E26).  It is read into RAM behind the veneer so
     that drivers/adbport can serve it to Setup as \\Device\\Floppy0 once NT is running --
     the copy of OEM files onto the hard disk happens under NT, and NT has no SWIM3 driver.
     The contract is include/oemdisk.h; the HAL checks the header and fences the pages."""
@@ -348,8 +362,12 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
          '\\     load fd:,\\boot.of',
          '\\     load-base loadsize eval',
          '\\',
-         '\\ Everything below is Open Firmware\'s own; nothing is patched at run time.  The veneer',
-         '\\ on this disk already carries its patches as bytes.',
+         ('\\ The ARC firmware read here is this project\'s own (src/arcfw); nothing of Microsoft\'s'
+          if firmware == 'ARCFW.EXE' else
+          '\\ Everything below is Open Firmware\'s own; nothing is patched at run time.  The veneer'),
+         ('\\ is on this disk.  It loads SETUPLDR off the CD, named by the environment set below.'
+          if firmware == 'ARCFW.EXE' else
+          '\\ on this disk already carries its patches as bytes.'),
          '',
          '0 value nt-pe',
          '0 value nt-fd',
@@ -405,8 +423,11 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
           f'   {C["OEMDISK_BLOCK"]:X} {hdr + 0x10:X} !      \\ BlockBytes',
           f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
           '   nt-fd close-dev',
-          f'   " {cd_dev}" encode-string " bootpath" _chosen (property)',
-          '   ." powermac-nt-hal: starting Windows NT Setup" cr',
+          f'   " {cd_dev}" encode-string " bootpath" _chosen (property)']
+    if firmware == 'ARCFW.EXE':
+        L += ['   \\ the ARC environment for this boot: SETUPLDR off the CD, on the node arcfw reads']
+        L += env_property_lines(env or [])
+    L += ['   ." powermac-nt-hal: starting Windows NT Setup" cr',
           '   go',
           ';',
           '',
@@ -432,6 +453,19 @@ def arc_environment(disk_arc='multi(0)scsi(1)disk(0)rdisk(0)', sys_part=1, os_pa
     ]
 
 
+def install_environment(cd_arc='multi(0)scsi(0)cdrom(0)fdisk(0)',
+                        identifier='Windows NT Setup'):
+    """The ARC variables arcfw reads for the install boot: the boot file is SETUPLDR on the CD
+    (the path the veneer hardcoded, wall 47), and the system partition is the CD itself, which is
+    what SETUPLDR opens raw and parses as ISO 9660 (E3)."""
+    return [
+        ('SYSTEMPARTITION', cd_arc),
+        ('OSLOADER',        cd_arc + r'\PPC\SETUPLDR'),
+        ('OSLOADOPTIONS',   'NODEBUG'),
+        ('LOADIDENTIFIER',  identifier),
+    ]
+
+
 def env_property_lines(env, indent='   '):
     """Forth that puts each ARC variable on /options as a property, inside a colon definition.
 
@@ -446,7 +480,8 @@ def env_property_lines(env, indent='   '):
 
 
 def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev, env,
-                     loader_base=0x80600000, loader_size=0x4A800, stage=0x3D00000, load=0x3E00000):
+                     loader_base=0x80600000, loader_size=0x4A800, stage=0x3D00000, load=0x3E00000,
+                     firmware='VENEERD.EXE'):
     """\\BOOTDISK.OF: boot the system text-mode Setup installed on the hard disk.
 
     The same shape as \\BOOT.OF with the OEM disk left out, a `--for disk` veneer read instead of
@@ -472,8 +507,12 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
          '\\     load fd:,\\bootdisk.of',
          '\\     load-base loadsize eval',
          '\\',
-         '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path',
-         '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment goes onto /options for this',
+         ('\\ The ARC firmware read here is this project\'s own (src/arcfw), not Microsoft\'s veneer.'
+          if firmware == 'ARCFW.EXE' else
+          '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path'),
+         ('\\ It takes OSLOADER and the rest of the ARC environment from /options, set below for this'
+          if firmware == 'ARCFW.EXE' else
+          '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment goes onto /options for this'),
          '\\ boot only; nothing is patched at run time.',
          '',
          '0 value nt-pe',
@@ -498,7 +537,9 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
           # the same low page boot.of maps, for the same reason (ledger row 1)
           f'   4000 1000 " map-space" nt-pe $call-method']
     pad = (-loader_size) % 0x1000
-    if pad:
+    # arcfw claims the loader's pages whole itself, and its memory descriptors are built from
+    # page-rounded claims; the sliver would only collide with that claim (5 November).
+    if pad and firmware != 'ARCFW.EXE':
         end = (loader_base & 0x7FFFFFFF) + loader_size
         L += ['   \\ the loader is not a whole number of pages; claim the rest of its last page (E24)',
               f'   {end:X} {pad:X} " map-space" nt-pe $call-method']
@@ -553,8 +594,12 @@ def txtsetup_oem(display, adb=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
-    ap.add_argument('--veneer', required=True, help='VENEER.EXE, already patched by mkveneer.py')
-    ap.add_argument('--setupldr', required=True, help="PPC/SETUPLDR from the user's CD")
+    ap.add_argument('--veneer', help='VENEER.EXE, already patched by mkveneer.py, for \\BOOT.OF to start '
+                                     'the install from.  Not needed with --arc-firmware, which then '
+                                     'serves both scripts and the floppy carries nothing of Microsoft\'s')
+    ap.add_argument('--setupldr', help="the CD's PPC/SETUPLDR, placed at \\PPC\\SETUPLDR. Only "
+                                       'needed to boot *from* the floppy (the plan\'s section 2.2); '
+                                       'the OEM-disk arrangement of 2.1 loads it from the CD')
     ap.add_argument('--hal', required=True, help='build/hal.dll — installed as HALSHINR.DLL')
     ap.add_argument('--adb-driver', metavar='PATH',
                     help='the ADB keyboard/mouse/OEM-disk driver, installed as ADBPORT.SYS and '
@@ -567,6 +612,10 @@ def main():
     ap.add_argument('--disk-veneer', metavar='PATH',
                     help='VENEER.EXE patched by `mkveneer.py --for disk`; placed as \\PPC\\VENEERD.EXE, '
                          'contiguous, with \\BOOTDISK.OF to boot the installed system from it')
+    ap.add_argument('--arc-firmware', metavar='PATH',
+                    help="this project's own ARC firmware (build/arcfw.exe) in place of the disk veneer: "
+                         'placed as \\PPC\\ARCFW.EXE, contiguous, and \\BOOTDISK.OF starts it instead of '
+                         "Microsoft's VENEERD.EXE, which is then not put on the disk")
     ap.add_argument('--osloader-exe', metavar='PATH',
                     help="OSLOADER.EXE (the CD's PPC/OSLOADER.EXE, or the installed disk's), for its "
                          "ImageBase and SizeOfImage; default: NT 4.0's, 0x80600000 and 0x4A800")
@@ -584,6 +633,8 @@ def main():
                     help='Open Firmware path of this drive, for boot.of to read the veneer from')
     ap.add_argument('--cd-dev', default='/bandit/53c825@11/sd@0,0',
                     help="Open Firmware path of the CD, which boot.of makes /chosen bootpath")
+    ap.add_argument('--cd-arc', default='multi(0)scsi(0)cdrom(0)fdisk(0)',
+                    help='the same CD as an ARC path, for the install environment arcfw boots from')
     ap.add_argument('--no-scripts', action='store_true',
                     help='leave \\BOOT.OF and \\SETUP.OF off the disk')
     ap.add_argument('--tag', metavar='PATH',
@@ -603,6 +654,7 @@ def main():
     ap.add_argument('--display-driver', help='the display miniport, installed as CIRRUS.SYS')
     ap.add_argument('--display-dll', help='the display DLL, installed as CIRRUS.DLL')
     ap.add_argument('--vga-aperture', type=lambda x: int(x, 0), metavar='ADDR', default=None,
+                    # ledger row 6, retired: the HAL translates the real 0xA0000 now
                     help='ledger row 6: move the display miniport\'s legacy-VGA-aperture claim '
                          'from 0xA0000 to ADDR, which must be at or above 0x80000000 — see '
                          'move_vga_aperture(). 0x90000000 is what this project uses')
@@ -625,23 +677,39 @@ def main():
             sys.exit(f'{adb_driver}: not found -- `make` builds it, or --adb-driver PATH, or --no-adb-driver')
 
     fs = Fat12(**GEOM)
-    veneer = read(a.veneer)
-    vcluster, vlba = fs.alloc(veneer)
-    if vcluster != 2:
-        sys.exit('the veneer did not land on cluster 2 — it must be allocated first')
-    vblocks = (len(veneer) + SECTOR - 1) // SECTOR
+    if not a.veneer and not a.arc_firmware:
+        sys.exit('nothing to boot: --arc-firmware build/arcfw.exe (this project\'s own), or --veneer')
+    # The boot images go first, contiguous, since the scripts read them by block.  With no
+    # veneer, arcfw is the one image and both scripts read it.
+    veneer = read(a.veneer) if a.veneer else None
+    dname = 'VENEERD.EXE'
     dveneer = read(a.disk_veneer) if a.disk_veneer else None
+    if a.arc_firmware:
+        if dveneer is not None:
+            print('  (--disk-veneer ignored: --arc-firmware boots the installed system)')
+        dveneer = read(a.arc_firmware)
+        dname = 'ARCFW.EXE'
+    if veneer is not None:
+        vcluster, vlba = fs.alloc(veneer)
+        if vcluster != 2:
+            sys.exit('the veneer did not land on cluster 2 — it must be allocated first')
+        vblocks = (len(veneer) + SECTOR - 1) // SECTOR
+        bname = 'VENEER.EXE'
     if dveneer is not None:
         dcluster, dlba = fs.alloc(dveneer)          # second, so contiguous as well
         dblocks = (len(dveneer) + SECTOR - 1) // SECTOR
+    if veneer is None:
+        # arcfw serves the install boot too: BOOT.OF reads the same blocks BOOTDISK.OF does
+        veneer, vcluster, vlba, vblocks, bname = dveneer, dcluster, dlba, dblocks, dname
 
-    # `\\PPC` mirrors the CD, because the veneer's boot-file path is `\\PPC\\SETUPLDR` and it
-    # resolves that on whatever device it booted from.  The OEM files go in the **root**: a
+    # `\\PPC` holds the veneers, and mirrors the CD's layout so that a boot *from* this disk
+    # (`--setupldr`, `--sif`) finds `\\PPC\\SETUPLDR` where the veneer's boot-file path says.
+    # The OEM files go in the **root**: a
     # `[Disks]` line's third field is the directory Setup prefixes to every filename it reads
     # from the disk, and Setup asked for `\\halshinr.dll` when that field was `\\`.
-    ppc = [fs.dirent('VENEER.EXE', vcluster, len(veneer))]
-    if dveneer is not None:
-        ppc.append(fs.dirent('VENEERD.EXE', dcluster, len(dveneer)))
+    ppc = [fs.dirent(bname, vcluster, len(veneer))]
+    if dveneer is not None and bname != dname:
+        ppc.append(fs.dirent(dname, dcluster, len(dveneer)))
     root = []
     for name, path, where in (('SETUPLDR', a.setupldr, ppc),
                               ('TXTSETUP.SIF', a.sif, ppc),
@@ -651,7 +719,8 @@ def main():
                               ('CIRRUS.DLL', a.display_dll, root),
                               ('ADBPORT.SYS', adb_driver, root)):
         if path is None:
-            print(f'  ({name} omitted -- no path given)')
+            if name not in ('SETUPLDR', 'TXTSETUP.SIF', 'I8042PRT.SYS'):   # the 2.2 extras
+                print(f'  ({name} omitted -- no path given)')
             continue
         data = read(path)
         if name == 'CIRRUS.SYS' and a.vga_aperture is not None:
@@ -668,8 +737,9 @@ def main():
     # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
     if not a.no_scripts:
         boot = (read(a.boot_script) if a.boot_script
-                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev,
-                                 GEOM['total']).encode('ascii'))
+                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev, GEOM['total'],
+                                 firmware=bname,
+                                 env=install_environment(a.cd_arc)).encode('ascii'))
         c, _ = fs.alloc(boot)
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
         env = arc_environment(a.disk_arc, a.system_partition, a.os_partition, a.osloader,
@@ -686,7 +756,8 @@ def main():
             if a.osloader_exe:
                 h = read(a.osloader_exe)
                 lb, ls = struct.unpack_from('<I', h, 20 + 28)[0], struct.unpack_from('<I', h, 20 + 56)[0]
-            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, env, lb, ls).encode('ascii')
+            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, env, lb, ls,
+                                  firmware=dname).encode('ascii')
             c3, _ = fs.alloc(bd)
             root.append(fs.dirent('BOOTDISK.OF', c3, len(bd)))
             print(f'  \\BOOTDISK.OF   {len(bd)} bytes   the installed system: load fd:,\\bootdisk.of  '
@@ -714,13 +785,15 @@ def main():
 
     used = fs.next_free - 2
     print(f'{a.out}: {len(img)} bytes, FAT12, {used}/{fs.clusters} clusters used')
-    print(f'  \\PPC\\VENEER.EXE   {len(veneer)} bytes at block {vlba} ({vlba:#x}), '
+    print(f'  \\PPC\\{bname:12} {len(veneer)} bytes at block {vlba} ({vlba:#x}), '
           f'{vblocks} blocks ({vblocks:#x}) — contiguous')
-    print(f'  read it with:  mkcoldboot.py --veneer-dev /bandit/gc/swim3 '
-          f'--veneer-block {vlba:#x} --veneer-blocks {vblocks:#x}')
-    if dveneer is not None:
-        print(f'  \\PPC\\VENEERD.EXE  {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
+    print(f'  \\BOOT.OF reads it with read-blocks from block {vlba:#x}, {vblocks:#x} blocks'
+          + (' (and so does \\BOOTDISK.OF)' if bname == dname else ''))
+    if dveneer is not None and bname != dname:
+        print(f'  \\PPC\\{dname:12} {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
               f'{dblocks} blocks ({dblocks:#x}) — contiguous, for \\BOOTDISK.OF')
+    if veneer is dveneer:
+        print('  nothing of Microsoft\'s is on this disk: it may be redistributed (GPL-2.0-only)')
 
 
 if __name__ == '__main__':

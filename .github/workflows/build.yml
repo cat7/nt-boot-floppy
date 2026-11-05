@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Copyright (C) 2026 powermac-nt-hal contributors
 #
-# Proves the central claim of this project: HAL.DLL for Windows NT 4.0 PowerPC builds from
-# source with clang, lld and a Python script, and no Microsoft tool anywhere in the build.
+# Proves the central claim of this project: HAL.DLL, the ADB driver and the ARC firmware for
+# Windows NT 4.0 PowerPC build from source with clang, lld and a Python script, no Microsoft
+# tool anywhere in the build, and the boot floppy is laid out from them alone.
 name: build
 
 on:
@@ -23,12 +24,27 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang-18 lld-18 llvm-18
 
       - name: Build
-        run: make
+        run: |
+          make
+          make floppy
 
       - name: Check what came out
         run: |
           set -e
           test -f build/hal.dll
+          test -f build/adbport.sys
+          test -f build/arcfw.exe
+          test -f build/boot-floppy.img
+          python3 tools/pe-exports.py build/adbport.sys | grep -q '01f0\|0x1f0'
+          # arcfw.exe is a raw COFF: machine 0x01F0 in its first two bytes
+          test "$(head -c 2 build/arcfw.exe | od -An -tx1 | tr -d ' ')" = f001
+          # the floppy carries nothing of Microsoft's: no such 8.3 directory entry on it
+          for e in 'VENEER  EXE' 'VENEERD EXE' 'SETUPLDR   ' 'CIRRUS  SYS' 'CIRRUS  DLL' 'I8042PRTSYS'; do
+            ! grep -aq "$e" build/boot-floppy.img || { echo "$e is on the floppy"; exit 1; }
+          done
+          for e in 'ARCFW   EXE' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
+            grep -aq "$e" build/boot-floppy.img || { echo "$e is missing from the floppy"; exit 1; }
+          done
           # A PowerPC (little-endian) PE that NT's loader will accept: machine 0x01F0.
           python3 tools/pe-exports.py build/hal.dll | tee /tmp/pe.txt
           grep -q '01f0\|0x1f0' /tmp/pe.txt
@@ -45,7 +61,7 @@ jobs:
         run: |
           set -e
           bad=0
-          for f in src/*.c src/*.S include/*.h tools/*.py Makefile hal.ld hal.exports hal.imports; do
+          for f in src/*.c src/*.S src/arcfw/*.c src/arcfw/*.S src/arcfw/*.h src/arcfw/*.ld drivers/adbport/*.c drivers/adbport/*.h include/*.h tools/*.py Makefile hal.ld hal.exports hal.imports .github/workflows/*.yml; do
             head -6 "$f" | grep -q '^\(/\*\| \*\|#\) SPDX-License-Identifier: GPL-2.0-only$' \
               || { echo "$f: missing or malformed SPDX identifier (it must be alone on its line)"; bad=1; }
             head -6 "$f" | grep -q 'Copyright (C) 2026 powermac-nt-hal contributors' \
@@ -60,12 +76,21 @@ jobs:
       - name: Rebuild from clean, byte for byte
         run: |
           cp build/hal.dll /tmp/hal-first.dll
+          cp build/arcfw.exe /tmp/arcfw-first.exe
+          cp build/boot-floppy.img /tmp/floppy-first.img
           make clean
           make
+          make floppy
           cmp /tmp/hal-first.dll build/hal.dll
+          cmp /tmp/arcfw-first.exe build/arcfw.exe
+          cmp /tmp/floppy-first.img build/boot-floppy.img
 
       - uses: actions/upload-artifact@v4
         with:
-          name: hal.dll
-          path: build/hal.dll
+          name: boot-floppy
+          path: |
+            build/boot-floppy.img
+            build/hal.dll
+            build/adbport.sys
+            build/arcfw.exe
           if-no-files-found: error

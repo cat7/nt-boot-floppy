@@ -52,7 +52,7 @@ R=<path to the ANS ROM>
 ./build/headless/gs-headless --speed=turbo --no-prompt -q \
     rom=$R --var ROM=$R --checkpoint-dir=tmp/ckpt script=tmp/my.gs > tmp/my.log 2>&1
 
-# against a long-lived daemon (needed by tools/run-boot.py, which splices a disk image)
+# against a long-lived daemon (needed by tools/attic/run-boot.py, which splices a disk image)
 ./build/headless/gs-headless --daemon --port=6820 --speed=turbo --no-prompt -q \
     --checkpoint-dir=tmp/ckpt-daemon rom=$R --var ROM=$R &
 python3 tools/gsh.py 'echo alive'
@@ -81,7 +81,7 @@ python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img \
 #   initialising video.  cirrus.sys and cirrus.dll come off the user's own media
 
 # 3. a cold boot of the *stock* CD, with the veneer read off the floppy
-python3 tools/mkcoldboot.py --rom $R --cd <stock.iso> --staging <install-target.img> \
+python3 tools/attic/mkcoldboot.py --rom $R --cd <stock.iso> --staging <install-target.img> \
         --floppy tmp/boot-floppy.img \
         --veneer-dev /bandit/gc/swim3 --veneer-block 0x21 --veneer-blocks 0x13c \
         --cd-dev /bandit/53c825@11/sd@0,0 --out tmp/fd.gs --chunks 900
@@ -113,7 +113,7 @@ python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img --veneer tmp/veneer-fd.exe \
         --setupldr <PPC/SETUPLDR> --hal build/hal.dll \
         --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
-python3 tools/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
+python3 tools/attic/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
         --floppy tmp/boot-floppy.img --veneer-dev /bandit/gc/swim3 \
         --veneer-block 0x21 --veneer-blocks 0x13c \
         --cd-dev /bandit/53c825@11/sd@0,0 --out tmp/fd.gs --chunks 900
@@ -960,5 +960,5 @@ Each of these cost at least one run.
 | **miniport** | the hardware-specific half of an NT driver, sitting on a generic port driver (`scsiport`, `videoprt`). Stock Microsoft miniports drive this machine because the HAL answers their abstract questions |
 | **OEM disk** | Setup's own mechanism for hardware it does not know: pick `Other` at a class menu and it reads `txtsetup.oem` off a floppy. Not a patch, not a hack — the thing `TXTSETUP.SIF` editing was imitating |
 | **`txtsetup.oem`** | the INI file on that disk. `[Disks]` names it and says which directory its files are in, `[Computer]`/`[Keyboard]`/`[Display]`/`[SCSI]` offer entries, `[Files.<class>.<id>]` names the files |
-| **the ledger** | the table of workarounds at the end of [`../STORY.md`](../STORY.md): what each one is, why it is not a fix, and what a real fix would be |
+| **the ledger** | the table of workarounds at the end of [`STORY.md`](STORY.md): what each one is, why it is not a fix, and what a real fix would be |
 | **wall *n*** | a numbered obstacle in `STORY.md`'s narrative; the walls referenced here are 22, **25**, 26, 27, 46 and 52 |

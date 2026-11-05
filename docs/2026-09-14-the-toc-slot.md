@@ -28,7 +28,7 @@ one fault that matters out of the thousands a boot takes:
 debug.breakpoints.add 0x300 "machine.cpu.dar == 0xEE315C98" "logical"
 ```
 
-`tools/mkbootscript.py --bp ADDR[:COND]` now emits that, with `KeBugCheckEx` as a backstop
+`tools/attic/mkbootscript.py --bp ADDR[:COND]` now emits that, with `KeBugCheckEx` as a backstop
 (`0x80679eac` — its export descriptor's entry, plus the load base the HAL prints). One run:
 
 ```

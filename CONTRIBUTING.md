@@ -55,7 +55,7 @@ this; keep it accurate.
   way; `make` must work on a stock Linux box with `clang-18` and `lld-18`.
 - Structure layouts that the kernel and the HAL must agree on are pinned with
   `_Static_assert` on `sizeof`. If you add one, pin it.
-- **The alignment hazard, which has bitten this code three times** (`STORY.md` walls 33, 34 and
+- **The alignment hazard, which has bitten this code three times** (`docs/STORY.md` walls 33, 34 and
   42 — read them before writing any byte-at-a-time code). The 604 runs **little-endian** here,
   where a misaligned access traps instead of being fixed up in hardware. LLVM will re-create
   exactly the misaligned access you wrote byte-at-a-time to avoid, and it does so in three
@@ -75,7 +75,7 @@ this; keep it accurate.
   print nothing.
 - An eight-byte return value (`LARGE_INTEGER`, `PHYSICAL_ADDRESS`) comes back through a hidden
   pointer in `r3` on this ABI, so arguments start at `r4`. Such routines are declared here as
-  `VOID` with an explicit out-pointer. Wall 20 in `STORY.md` is what happens when they are not.
+  `VOID` with an explicit out-pointer. Wall 20 in `docs/STORY.md` is what happens when they are not.
 
 ## Testing a change
 
@@ -84,5 +84,5 @@ in [`tools/README.md`](tools/README.md): build, write `hal.dll` over `HALEAGLE.D
 the CD, restore a checkpoint at Setup's computer-type menu, and drive it with
 [`tools/run-hal.py`](tools/run-hal.py). Console output, screenshots and the HAL's own
 `HalpPrint` trace are the evidence. When a change fixes a wall, add its trace to
-[`traces/`](traces/) and its story to `STORY.md` — that file is the project's real
+[`traces/`](traces/) and its story to `docs/STORY.md` — that file is the project's real
 documentation.

@@ -1,7 +1,7 @@
 # Partition tables, the ARC environment, and the start of an install
 
 *2026-09-07. `src/disk.c` (new), `src/misc.c` (the ARC environment and drive letters),
-`tools/mkarcdisk.py` (new). The narrative version is [`../STORY.md`](../STORY.md) walls 32–40;
+`tools/mkarcdisk.py` (new). The narrative version is [`STORY.md`](STORY.md) walls 32–40;
 this document keeps the register- and structure-level detail.*
 
 Setup began the day refusing to start — *"No valid system partitions are defined on this
