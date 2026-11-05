@@ -258,9 +258,19 @@ def main():
     size_headers = align(stub + 20 + 0xE0 + 40 * nsec, FA)
     file_off = size_headers
     for p in pesecs:
+        if a.raw_coff:
+            # The ROM's pe-loader lays the file out flat: byte SizeOfHeaders + n of the file
+            # lands at ImageBase + n, whatever the section table says.  The veneer is built that
+            # way (every section's PointerToRawData is its RVA + 0x200), and a first arcfw that
+            # was not had its .rdata strings land in .text's padding and its .data a page off --
+            # Open Firmware answered every client-interface call with -1 because the service
+            # name it was handed read as "" (probe of 5 November).  So each section's raw data
+            # is padded to its RVA stride, and the file is an image of memory.
+            p['data'] = p['data'].ljust(align(p['vsize'], SA), b'\0')
         p['raw_size'] = align(len(p['data']), FA)
         p['raw_off'] = file_off if p['raw_size'] else 0
         file_off += p['raw_size']
+        assert not a.raw_coff or p['raw_off'] == size_headers + p['rva'], (p['name'], p['raw_off'], p['rva'])
     text = [p for p in pesecs if p['name'] == '.text'][0]
     datas = [p for p in pesecs if p['chars'] & 0x40 and p['name'] != '.text']
     entry_sym = syms.get(a.entry)
