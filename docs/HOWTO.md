@@ -118,7 +118,7 @@ the kernel onward Setup draws on the monitor and takes the ADB keyboard.
 |---|---|
 | **Select the computer type** | ↓ to **Other**, Enter. Enter again for the support disk (the floppy is already in). One entry is offered, **Apple Network Server 500/700**: Enter |
 | **Mass storage** | the step everyone skips. **S**, then **Other**, Enter, and pick **Apple Desktop Bus keyboard and mouse, and the OEM disk (powermac-nt-hal)**. The list then shows two devices: Enter |
-| **Video adapter** | the CD's own **Cirrus Logic** entry from the list, Enter. (Floppies built before 5 November 2026 offered *Cirrus Logic 54M30 (Apple Network Server 500/700)* under **Other** instead, carrying a patched driver; the HAL no longer needs it, and this step has not yet been re-run with a stock CD) |
+| **Video adapter** | **↑ twice** from *Other* to **Motorola Power Stack (cirrus 54xx)**, the CD's own entry, Enter. (Floppies built before 5 November 2026 offered *Cirrus Logic 54M30 (Apple Network Server 500/700)* under **Other** instead, carrying a patched driver; the HAL no longer needs it) |
 | **Welcome to Setup** | Enter |
 | **Mass storage (NT's own list)** | Enter |
 | **Licence** | Page Down **eighteen times**, then **F8** |
