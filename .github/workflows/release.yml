@@ -5,9 +5,9 @@
 # GitHub Pages.  Nothing on the floppy is Microsoft's -- the ARC firmware is src/arcfw, the HAL
 # and the ADB driver are this project's -- so the image may be redistributed (GPL-2.0-only).
 #
-# Runs on a version tag (v1.0, v1.0.1, ...) or by hand.  Pages needs the repository's Pages
-# source set to "GitHub Actions" once (Settings > Pages); until then the Pages job fails and the
-# Release still goes out.
+# Runs on a version tag (v1.0, v1.0.1, ...), pushed with git or made on the Releases page, or
+# by hand.  Pages needs the repository's Pages source set to "GitHub Actions" once (Settings >
+# Pages); until then the Pages job fails and the Release still goes out.
 name: release
 
 on:
@@ -107,11 +107,20 @@ jobs:
             echo "You still need the Network Server's Open Firmware 2.26NT ROM and your own Windows NT 4.0 Workstation for PowerPC CD."
             echo "[docs/HOWTO.md](https://github.com/${GITHUB_REPOSITORY}/blob/$v/docs/HOWTO.md) is the whole walk."
           } > notes.md
-      - name: Create the GitHub Release
+      # A tag pushed with git has no release yet: create one.  A tag made on the Releases page
+      # ("Draft a new release", "Create new tag on publish") arrives with its release already
+      # there: fill that one in, replacing any asset of the same name.
+      - name: Create or fill the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ needs.build.outputs.version }}" dist/* --title "powermac-nt-hal ${{ needs.build.outputs.version }}" --notes-file notes.md
+          v="${{ needs.build.outputs.version }}"
+          if gh release view "$v" >/dev/null 2>&1; then
+            gh release upload "$v" dist/* --clobber
+            gh release edit "$v" --title "powermac-nt-hal $v" --notes-file notes.md
+          else
+            gh release create "$v" dist/* --title "powermac-nt-hal $v" --notes-file notes.md
+          fi
 
   pages:
     needs: build
