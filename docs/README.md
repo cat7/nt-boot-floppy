@@ -6,7 +6,7 @@ register-level detail behind one part of that story.
 
 | | |
 |---|---|
-| [`EMULATOR.md`](EMULATOR.md) | **Start here to run anything.** Step-by-step setup of the emulator this HAL is developed against — including the fact that the support it needs is an *open pull request*, not Granny Smith's mainline, and how to check you have the right tree |
+| [`EMULATOR.md`](EMULATOR.md) | **Start here to run anything.** Step-by-step setup of the emulator this HAL is developed against — Granny Smith's `main` has everything it needs since September 2026 — how to check the tree, what you must supply yourself, and how to run the floppy |
 | [`CHARTER.md`](CHARTER.md) | The standing document: the goal, the machine as a HAL sees it, what NT expects from a HAL and how Setup chooses one, the plan, the open questions, the conventions, and the licensing reasoning. Written to be read cold |
 
 ## Session write-ups, in order

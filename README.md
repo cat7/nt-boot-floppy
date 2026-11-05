@@ -205,14 +205,12 @@ find a keyboard"* several screens later), and leaving the file system as FAT.
 Development is against the [Granny Smith](https://github.com/pappadf/granny-smith) emulator,
 which has the breakpoints, device logpoints and checkpoints that make this tractable.
 
-> **The emulator support this needs is not in Granny Smith's mainline yet.** It is
-> [PR #135](https://github.com/pappadf/granny-smith/pull/135), branch
-> `ppc-le-mode-and-bandit-lane-reversal` — PowerPC little-endian mode, Bandit byte-lane
-> reversal, the Cirrus 54M30 identification registers and its BitBLT engine. Build `main` and
-> the firmware's little-endian reboot fails, long before anything mentions NT.
-> **[`docs/EMULATOR.md`](docs/EMULATOR.md) is the step-by-step setup** — which branch, how to
-> check you actually have it, how to build it, and what you must supply yourself (ROM, NT CD,
-> disk images).
+> **The emulator support this needs is in Granny Smith's `main`**: PowerPC little-endian mode,
+> Bandit byte-lane reversal, the Cirrus 54M30 identification registers and its BitBLT engine
+> all merged in September 2026. Granny Smith's own integration tests `ans-nt-install` and
+> `ans-nt-installed-boot` install NT from this project's floppy and cold-boot the result to the
+> logon screen. **[`docs/EMULATOR.md`](docs/EMULATOR.md) is the step-by-step setup** — how to
+> build it, how to check it, and what you must supply yourself (ROM, NT CD, disk image).
 
 [`tools/README.md`](tools/README.md) documents every option of every tool, and
 [`docs/CHARTER.md`](docs/CHARTER.md) §3.1 has the firmware sequence and the gotchas.
@@ -226,11 +224,12 @@ rewritten from reading). Every source file repeats its own origin in its header.
 was copied from either upstream; both are recorded as *rewritten from reading*, and that is
 still a derivation — which is where the licence comes from.
 
-The keyboard currently works by loading **maciNTosh's `usbadb.sys`**, a binary this project may
-**run locally but never redistribute** — it is GPL-2.0 with no published source, so GPL-2.0 §3
-cannot be satisfied. Replacing it with a port driver of our own, written from
-`entii-for-workcubes`' `fpsidrv` source, is the outstanding task; the HAL half of the interface
-already exists here.
+The keyboard and mouse once worked by loading **maciNTosh's `usbadb.sys`**, a binary this
+project could run locally but never redistribute — it is GPL-2.0 with no published source, so
+GPL-2.0 §3 cannot be satisfied. That dependency is gone: [`drivers/adbport/`](drivers/adbport/)
+is this project's own port driver, built from source with the HAL, and it is what the floppy
+carries. `usbadb.sys` remains in the provenance log as the binary whose interface was read, never
+copied, to write it.
 
 Nothing in this repository is derived from leaked Windows NT source. Everything came from the
 DDK-documented `Hal*` contract, the shipped binaries' own COFF symbol tables, observed behaviour
