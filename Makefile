@@ -101,25 +101,17 @@ $(BUILD)/arcfw.elf: $(ARCFW_OBJS) $(ARCFW)/arcfw.ld
 $(BUILD)/arcfw.exe: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
 	python3 $(TOOLS)/elf2pe.py $< $@ --raw-coff --entry _start --dllname arcfw.exe
 
-# The boot floppy, from your own Windows NT 4.0 PowerPC CD:
+# The boot floppy:
 #
-#     make floppy ISO=/path/to/nt4-ppc.iso
+#     make floppy                    # -> build/boot-floppy.img
 #
-# Builds the HAL, the ADB driver and the ARC firmware first, then takes the one
-# file it cannot ship -- Microsoft's ARC veneer, for the install boot -- off
-# the image you name, patches it, and lays out build/boot-floppy.img.  The
-# installed system boots through this project's own firmware (src/arcfw).
-# SETUPLDR and the Cirrus display pair stay on the CD, where the veneer and
-# Setup load them.
-#
-# The result CANNOT BE REDISTRIBUTED: one of its eight files is that veneer,
-# modified.  See PROVENANCE.md.
+# Builds the HAL, the ADB driver and the ARC firmware, and lays them out with
+# a txtsetup.oem and the three Open Firmware scripts.  Nothing on it is
+# Microsoft's: the firmware is this project's (src/arcfw), SETUPLDR and the
+# Cirrus display pair stay on the CD, where the firmware and Setup load them.
+# The image may be redistributed under GPL-2.0-only.  (ISO= is ignored.)
 floppy: all
-	@test -n "$(ISO)" || { \
-	  echo 'make floppy needs your CD image:'; \
-	  echo '    make floppy ISO=/path/to/nt4-ppc.iso'; \
-	  exit 1; }
-	python3 $(TOOLS)/mkfloppy.py --iso "$(ISO)"
+	python3 $(TOOLS)/mkfloppy.py $(if $(ISO),--iso "$(ISO)")
 
 # An empty disk for NT to install onto:
 #

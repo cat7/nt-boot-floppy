@@ -338,8 +338,13 @@ def oemdisk_constants():
 
 
 def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_blocks,
-                stage=0x3D00000, load=0x3E00000):
-    """disk_blocks: the whole floppy, 2880 for 1.44 MB.  It is read into RAM behind the veneer so
+                stage=0x3D00000, load=0x3E00000, firmware='VENEER.EXE', env=None):
+    """disk_blocks: the whole floppy, 2880 for 1.44 MB.
+
+    firmware: which image the blocks hold.  With ARCFW.EXE (this project's own ARC firmware)
+    the ARC environment `env` is set on /options for this boot, as bootdisk.of does: arcfw boots
+    whatever OSLOADER names, and for the install that is \\PPC\\SETUPLDR on the CD.  The veneer
+    needs no environment for the CD boot and must not be given one (E26).  It is read into RAM behind the veneer so
     that drivers/adbport can serve it to Setup as \\Device\\Floppy0 once NT is running --
     the copy of OEM files onto the hard disk happens under NT, and NT has no SWIM3 driver.
     The contract is include/oemdisk.h; the HAL checks the header and fences the pages."""
@@ -357,8 +362,12 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
          '\\     load fd:,\\boot.of',
          '\\     load-base loadsize eval',
          '\\',
-         '\\ Everything below is Open Firmware\'s own; nothing is patched at run time.  The veneer',
-         '\\ on this disk already carries its patches as bytes.',
+         ('\\ The ARC firmware read here is this project\'s own (src/arcfw); nothing of Microsoft\'s'
+          if firmware == 'ARCFW.EXE' else
+          '\\ Everything below is Open Firmware\'s own; nothing is patched at run time.  The veneer'),
+         ('\\ is on this disk.  It loads SETUPLDR off the CD, named by the environment set below.'
+          if firmware == 'ARCFW.EXE' else
+          '\\ on this disk already carries its patches as bytes.'),
          '',
          '0 value nt-pe',
          '0 value nt-fd',
@@ -414,8 +423,11 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
           f'   {C["OEMDISK_BLOCK"]:X} {hdr + 0x10:X} !      \\ BlockBytes',
           f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
           '   nt-fd close-dev',
-          f'   " {cd_dev}" encode-string " bootpath" _chosen (property)',
-          '   ." powermac-nt-hal: starting Windows NT Setup" cr',
+          f'   " {cd_dev}" encode-string " bootpath" _chosen (property)']
+    if firmware == 'ARCFW.EXE':
+        L += ['   \\ the ARC environment for this boot: SETUPLDR off the CD, on the node arcfw reads']
+        L += env_property_lines(env or [])
+    L += ['   ." powermac-nt-hal: starting Windows NT Setup" cr',
           '   go',
           ';',
           '',
@@ -438,6 +450,19 @@ def arc_environment(disk_arc='multi(0)scsi(1)disk(0)rdisk(0)', sys_part=1, os_pa
         ('COUNTDOWN',       '5'),
         ('LASTKNOWNGOOD',   'FALSE'),
         ('PROCESSORS',      '1'),
+    ]
+
+
+def install_environment(cd_arc='multi(0)scsi(0)cdrom(0)fdisk(0)',
+                        identifier='Windows NT Setup'):
+    """The ARC variables arcfw reads for the install boot: the boot file is SETUPLDR on the CD
+    (the path the veneer hardcoded, wall 47), and the system partition is the CD itself, which is
+    what SETUPLDR opens raw and parses as ISO 9660 (E3)."""
+    return [
+        ('SYSTEMPARTITION', cd_arc),
+        ('OSLOADER',        cd_arc + r'\PPC\SETUPLDR'),
+        ('OSLOADOPTIONS',   'NODEBUG'),
+        ('LOADIDENTIFIER',  identifier),
     ]
 
 
@@ -569,7 +594,9 @@ def txtsetup_oem(display, adb=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
-    ap.add_argument('--veneer', required=True, help='VENEER.EXE, already patched by mkveneer.py')
+    ap.add_argument('--veneer', help='VENEER.EXE, already patched by mkveneer.py, for \\BOOT.OF to start '
+                                     'the install from.  Not needed with --arc-firmware, which then '
+                                     'serves both scripts and the floppy carries nothing of Microsoft\'s')
     ap.add_argument('--setupldr', help="the CD's PPC/SETUPLDR, placed at \\PPC\\SETUPLDR. Only "
                                        'needed to boot *from* the floppy (the plan\'s section 2.2); '
                                        'the OEM-disk arrangement of 2.1 loads it from the CD')
@@ -606,6 +633,8 @@ def main():
                     help='Open Firmware path of this drive, for boot.of to read the veneer from')
     ap.add_argument('--cd-dev', default='/bandit/53c825@11/sd@0,0',
                     help="Open Firmware path of the CD, which boot.of makes /chosen bootpath")
+    ap.add_argument('--cd-arc', default='multi(0)scsi(0)cdrom(0)fdisk(0)',
+                    help='the same CD as an ARC path, for the install environment arcfw boots from')
     ap.add_argument('--no-scripts', action='store_true',
                     help='leave \\BOOT.OF and \\SETUP.OF off the disk')
     ap.add_argument('--tag', metavar='PATH',
@@ -648,11 +677,11 @@ def main():
             sys.exit(f'{adb_driver}: not found -- `make` builds it, or --adb-driver PATH, or --no-adb-driver')
 
     fs = Fat12(**GEOM)
-    veneer = read(a.veneer)
-    vcluster, vlba = fs.alloc(veneer)
-    if vcluster != 2:
-        sys.exit('the veneer did not land on cluster 2 — it must be allocated first')
-    vblocks = (len(veneer) + SECTOR - 1) // SECTOR
+    if not a.veneer and not a.arc_firmware:
+        sys.exit('nothing to boot: --arc-firmware build/arcfw.exe (this project\'s own), or --veneer')
+    # The boot images go first, contiguous, since the scripts read them by block.  With no
+    # veneer, arcfw is the one image and both scripts read it.
+    veneer = read(a.veneer) if a.veneer else None
     dname = 'VENEERD.EXE'
     dveneer = read(a.disk_veneer) if a.disk_veneer else None
     if a.arc_firmware:
@@ -660,17 +689,26 @@ def main():
             print('  (--disk-veneer ignored: --arc-firmware boots the installed system)')
         dveneer = read(a.arc_firmware)
         dname = 'ARCFW.EXE'
+    if veneer is not None:
+        vcluster, vlba = fs.alloc(veneer)
+        if vcluster != 2:
+            sys.exit('the veneer did not land on cluster 2 — it must be allocated first')
+        vblocks = (len(veneer) + SECTOR - 1) // SECTOR
+        bname = 'VENEER.EXE'
     if dveneer is not None:
         dcluster, dlba = fs.alloc(dveneer)          # second, so contiguous as well
         dblocks = (len(dveneer) + SECTOR - 1) // SECTOR
+    if veneer is None:
+        # arcfw serves the install boot too: BOOT.OF reads the same blocks BOOTDISK.OF does
+        veneer, vcluster, vlba, vblocks, bname = dveneer, dcluster, dlba, dblocks, dname
 
     # `\\PPC` holds the veneers, and mirrors the CD's layout so that a boot *from* this disk
     # (`--setupldr`, `--sif`) finds `\\PPC\\SETUPLDR` where the veneer's boot-file path says.
     # The OEM files go in the **root**: a
     # `[Disks]` line's third field is the directory Setup prefixes to every filename it reads
     # from the disk, and Setup asked for `\\halshinr.dll` when that field was `\\`.
-    ppc = [fs.dirent('VENEER.EXE', vcluster, len(veneer))]
-    if dveneer is not None:
+    ppc = [fs.dirent(bname, vcluster, len(veneer))]
+    if dveneer is not None and bname != dname:
         ppc.append(fs.dirent(dname, dcluster, len(dveneer)))
     root = []
     for name, path, where in (('SETUPLDR', a.setupldr, ppc),
@@ -699,8 +737,9 @@ def main():
     # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
     if not a.no_scripts:
         boot = (read(a.boot_script) if a.boot_script
-                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev,
-                                 GEOM['total']).encode('ascii'))
+                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev, GEOM['total'],
+                                 firmware=bname,
+                                 env=install_environment(a.cd_arc)).encode('ascii'))
         c, _ = fs.alloc(boot)
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
         env = arc_environment(a.disk_arc, a.system_partition, a.os_partition, a.osloader,
@@ -746,12 +785,15 @@ def main():
 
     used = fs.next_free - 2
     print(f'{a.out}: {len(img)} bytes, FAT12, {used}/{fs.clusters} clusters used')
-    print(f'  \\PPC\\VENEER.EXE   {len(veneer)} bytes at block {vlba} ({vlba:#x}), '
+    print(f'  \\PPC\\{bname:12} {len(veneer)} bytes at block {vlba} ({vlba:#x}), '
           f'{vblocks} blocks ({vblocks:#x}) — contiguous')
-    print(f'  \\BOOT.OF reads it with read-blocks from block {vlba:#x}, {vblocks:#x} blocks')
-    if dveneer is not None:
+    print(f'  \\BOOT.OF reads it with read-blocks from block {vlba:#x}, {vblocks:#x} blocks'
+          + (' (and so does \\BOOTDISK.OF)' if bname == dname else ''))
+    if dveneer is not None and bname != dname:
         print(f'  \\PPC\\{dname:12} {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
               f'{dblocks} blocks ({dblocks:#x}) — contiguous, for \\BOOTDISK.OF')
+    if veneer is dveneer:
+        print('  nothing of Microsoft\'s is on this disk: it may be redistributed (GPL-2.0-only)')
 
 
 if __name__ == '__main__':
