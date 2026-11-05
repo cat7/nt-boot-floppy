@@ -1,9 +1,16 @@
+<!-- gs-doc-status: history -->
 # Every wall, and how it fell
+
+> **History.** This is the project's narrative as it was written, wall by wall, from the first
+> probe on 5 September 2026 to wall 51 on the 17th. It stops before the boot floppy and the GUI
+> install, which the dated write-ups in this directory cover. To *use* the project start at
+> [`HOWTO.md`](HOWTO.md); nothing here is needed for that.
+
 
 *A running account of getting Windows NT 4.0 to boot on an Apple Network Server 500 — one
 obstacle at a time, what each one turned out to be, and what it cost to get past. Written as a
-narrative; the reference documents in [`docs/`](docs/) carry the register-level detail and
-[`docs/CHARTER.md`](docs/CHARTER.md) carries the charter.*
+narrative; the reference documents in [`docs/`]() carry the register-level detail and
+[`docs/CHARTER.md`](CHARTER.md) carries the charter.*
 
 **The machine.** An Apple Network Server 500 ("Shiner"): a Power Macintosh 9500 logic board with
 server extras. PowerPC 604 at 132 MHz, two Bandit PCI host bridges, a Grand Central I/O chip,
@@ -704,7 +711,7 @@ and then, one key at a time over the ADB keyboard built in Part 7: the mass-stor
 confirmation screen — computer *MOTOROLA PowerStack*, display *Motorola Power Stack (cirrus
 54xx)*, keyboard *XT, AT, or Enhanced*, layout *US*, pointing device *Mouse Port Mouse*. Every
 one of those lines is something earlier in this story. Screenshots are in
-[`traces/`](traces/), `2026-09-06-setup-01-welcome.png` onward.
+[`traces/`](../traces/), `2026-09-06-setup-01-welcome.png` onward.
 
 ---
 
@@ -871,7 +878,7 @@ a defect in anything:
 > The partition or unpartitioned space you chose is too small for Windows NT. Select a partition
 > or unpartitioned space whose size is at least 158 megabytes.
 
-Screenshots: [`traces/`](traces/), `2026-09-06-setup-11-partition-list.png` and `-12-…`.
+Screenshots: [`traces/`](../traces/), `2026-09-06-setup-11-partition-list.png` and `-12-…`.
 
 ## Part 10 — Installing
 
@@ -1043,7 +1050,7 @@ then the remaining primaries, then the CD-ROMs.
 
 **Not fixed here.** The cause is identified and the fix is understood, but there is a next wall
 at every stage of this and there always will be; this is where the story stands at publication.
-Screens: [`traces/`](traces/), `2026-09-07-setup-13-partition-list-512mb.png` onward.
+Screens: [`traces/`](../traces/), `2026-09-07-setup-13-partition-list-512mb.png` onward.
 
 ### Wall 40 — a bug found by reading rather than by crashing
 
@@ -1249,7 +1256,7 @@ Open Firmware has no ARC NVRAM to keep them in, so the restart the screen invite
 every one of them — and `OSLOADER` is what the firmware would need them to find. Booting the
 installed system is the next phase, and it starts there.
 
-Screens: [`traces/`](traces/), `2026-09-07-setup-20-copying-files.png` through
+Screens: [`traces/`](../traces/), `2026-09-07-setup-20-copying-files.png` through
 `-22-completed-successfully.png`.
 
 ## Part 12 — Booting what Setup installed
@@ -1263,7 +1270,7 @@ and the `HAL.DLL` Setup itself copied.
 It reached the kernel. Five walls in between, and **not one of them was in the HAL**: two were
 in the loader, two were workarounds of ours misfiring, and one was the test rig. The full
 account, with the traces, is
-[`docs/2026-09-07-booting-the-installed-disk.md`](docs/2026-09-07-booting-the-installed-disk.md);
+[`docs/2026-09-07-booting-the-installed-disk.md`](2026-09-07-booting-the-installed-disk.md);
 what follows is the short version.
 
 Two things made the day mostly reading rather than guessing. `VENEER.EXE` and `OSLOADER.EXE` are
@@ -1400,7 +1407,7 @@ the address NT prints on the blue screen. Lesson 6, a second time.
 **Bought.** The `0x50` is gone and the installed system completes NT's I/O initialisation: both
 53C825As with adapters, interrupt vectors and real interrupts; `IoReadPartitionTable` over each
 disk; the video device assigned. Full write-up:
-[`docs/2026-09-14-the-toc-slot.md`](docs/2026-09-14-the-toc-slot.md).
+[`docs/2026-09-14-the-toc-slot.md`](2026-09-14-the-toc-slot.md).
 
 Worth re-testing deliberately, without over-claiming it here: that run applied **no**
 `VideoPortVerifyAccessRanges` bypass (ledger row 6) and no video conflict appeared. A video
@@ -1409,7 +1416,7 @@ driver whose TOC we were corrupting is a plausible cause of wall 25's unexplaine
 `ERROR_INVALID_PARAMETER` is our own `HalTranslateBusAddress` refusing the aperture, and there
 was never a conflict to appear.)*
 
-![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](traces/2026-09-07-boot-01-bugcheck-0x50.png)
+![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](../traces/2026-09-07-boot-01-bugcheck-0x50.png)
 
 ## Part 13 — Graphics
 
@@ -1499,9 +1506,9 @@ miniport first, the generic linear-framebuffer driver RISC NT normally uses seco
 chrome and logo, copying `E:\ppc\CONFIG.NT_` to `D:\WINNT\system32\CONFIG.TMP` at 640x480
 through this HAL's drive letters, both 53C825A controllers and `win32k`.
 
-![Setup copying files in graphics mode](traces/2026-09-14-gui-01-copying-files.png)
+![Setup copying files in graphics mode](../traces/2026-09-14-gui-01-copying-files.png)
 
-![The Windows NT Setup wizard](traces/2026-09-14-gui-02-setup-wizard.png)
+![The Windows NT Setup wizard](../traces/2026-09-14-gui-02-setup-wizard.png)
 
 *Two things are still owed here.* The desktop background renders noisily, which is a display
 driver or emulated-Cirrus question nobody has looked at yet. And ledger row 6 is still defeated
@@ -1532,7 +1539,7 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 14 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
 | 15 | `SYSTEM` and `DEFAULT` restored from their own `.SAV` copies (wall 48) | the captured image is incomplete — **49 files** have a cluster chain shorter than their size, so this repairs two of the rig's casualties rather than the cause | capturing the disk image after Setup's restart prompt has flushed; this is now the blocker |
 | 16 | ~~The ARC environment injected into the veneer at OSLOADER's first query (wall 45 onward)~~ **retired (16 September)** | a real machine reads it from NVRAM; this wrote ten variables into the veneer's own table from outside | done, see row 11: `read_ARC_env_vars` overwrites every argv slot with the `/options` property of the same name, so nothing has to be injected and wall 47's path relocation is not needed either |
-| 17 | Six bytes renaming the veneer's `floppy` device name to `swim3` | patches a Microsoft binary, like rows 1-5 — and it is the only thing that gives the internal drive an ARC name SETUPLDR can use (`multi(0)disk(0)fdisk(0)` instead of `multi(0)other(0)other(0)`) | a replacement ARC firmware, which would classify its own devices. See [`docs/2026-09-15-the-boot-floppy.md`](docs/2026-09-15-the-boot-floppy.md) §4.2 |
+| 17 | Six bytes renaming the veneer's `floppy` device name to `swim3` | patches a Microsoft binary, like rows 1-5 — and it is the only thing that gives the internal drive an ARC name SETUPLDR can use (`multi(0)disk(0)fdisk(0)` instead of `multi(0)other(0)other(0)`) | a replacement ARC firmware, which would classify its own devices. See [`docs/2026-09-15-the-boot-floppy.md`](2026-09-15-the-boot-floppy.md) §4.2 |
 
 Workarounds 1–5 and 17 all live in the veneer and all exist because Microsoft's ARC shim was
 written for a machine whose firmware behaves slightly differently. They are load-time memory pokes, they are

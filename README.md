@@ -1,4 +1,4 @@
-# powermac-nt-hal — a Windows NT 4.0 HAL for the Apple Network Server
+# powermac-nt-hal — Windows NT 4.0 on the Apple Network Server
 
 [![build](https://github.com/pappadf/powermac-nt-hal/actions/workflows/build.yml/badge.svg)](https://github.com/pappadf/powermac-nt-hal/actions/workflows/build.yml)
 [![licence: GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only-blue.svg)](LICENSE)
@@ -8,228 +8,116 @@
 [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit) by **MCJack123**. Reading
 their code is how this HAL knows what it knows. Thank you.*
 
-A hardware abstraction layer (`HAL.DLL`) that lets **Windows NT 4.0 for PowerPC** run on the
-**Apple Network Server 500/700** — a machine Apple never supported NT on, and which Microsoft's
-PowerPC NT never shipped a HAL for. It is built from source with `clang` and `lld`, with no
-Microsoft toolchain and no DDK.
+A hardware abstraction layer (`HALSHINR.DLL`) and an ADB keyboard/mouse driver (`ADBPORT.SYS`)
+that let **Windows NT 4.0 for PowerPC** install and run on the **Apple Network Server 500/700**,
+a machine Apple never supported NT on and Microsoft never shipped a HAL for. Both are built from
+source with `clang` and `lld`; there is no Microsoft tool, header or DDK in the build.
 
-The Network Server is a **TNT-class** machine — a Power Macintosh 9500 logic board with server
-changes: Hammerhead, two Bandit PCI bridges, Grand Central, Cuda over a VIA. Most of this HAL is
-therefore about the TNT family rather than about the ANS, and the machine-specific part is a
-short, enumerated list: the external interrupt routing, the second Bandit, the two 53C825As, the
-on-board Cirrus, and the timebase (all of `include/ans.h` plus `HalpPciInterruptLine`). Nothing
-here has been tried on a desktop 7500/8500/9500 — and those machines have no ARC firmware of
-their own, so booting NT on one needs
-[`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit)'s loader as well as a HAL.
-The door is deliberately left open; the claim is only about the ANS.
+![The Windows NT 4.0 desktop, running on the Apple Network Server](traces/2026-09-14-gui-04-desktop.png)
 
-**Three names, and it is worth being precise.** The repository is `powermac-nt-hal`. The build
-produces `build/hal.dll`, whose *internal* PE export name is `HAL.dll` — that one is not a
-choice, because `NTKRNLMP.EXE` imports from the literal string `HAL.dll`. On the CD and on the
-installed system it is **`HALSHINR.DLL`**, after Apple's codename for this logic board ("Shiner")
-in the 8.3 form NT's loader expects, the same convention as Microsoft's own `HALEAGLE.DLL` and
-maciNTosh's `halgoss.dll`; the HAL calls itself `halshinr` in its boot banner for that reason.
-[`tools/attic/mkoem.py`](tools/attic/mkoem.py) is what puts that name on the CD, together with a computer
-type of its own — Setup's hardware menu offers *"Apple Network Server 500/700"*, and installs
-`HALSHINR.DLL` as the system's `hal.dll`. A sibling for desktop TNT machines would be a second
-HAL built from the same sources.
+**What works.** From a cold machine and a **stock, unmodified** NT 4.0 Workstation CD, text-mode
+and GUI Setup complete, and the installed system cold-boots to its logon screen and takes
+Ctrl+Alt+Del from the ADB keyboard. Both Symbios 53C825A SCSI controllers, the Cirrus 54M30 at
+640×480×256 through NT's own display driver and the chip's BitBLT engine, the ADB keyboard and
+mouse through Cuda, the real-time clock, and NT's restart all work. The emulator project's
+integration tests do the whole install unattended.
 
-Windows NT 4.0 Setup, running on an emulated Network Server 500, reading a partition table
-through this HAL:
+**What does not, yet.** Networking: there is no adapter driver, and GUI Setup is told not to
+participate. Real hardware: nothing has been tried outside the emulator. And the boot floppy
+still carries four Microsoft files off the user's CD, three of them patched, so a built floppy
+cannot be shared; replacing the veneer and the display pair with code of this project's own is
+the open work.
 
-![NT 4.0 Setup's partition screen on an Apple Network Server](traces/2026-09-07-setup-13-partition-list-512mb.png)
+## Using it
 
-```
-512 MB Disk 0 at Id 0 on bus 0 on symc810
-      Unpartitioned space           2 MB
-  C:  FAT                          32 MB (  31 MB free)
-      Unpartitioned space         478 MB
-```
-
-## Where it stands
-
-Setup gets through its hardware detection, licence agreement and partitioning, creates and
-formats a partition, accepts an install directory, and begins writing to the disk. There has been
-a next wall at every stage of this and there will be more; what follows is where it stands, not
-where it stops:
-
-| | |
-|---|---|
-| HAL loads, kernel starts | *Microsoft (R) Windows NT (TM) Version 4.0 (Build 1381)*, on ttya **and** on the machine's own Cirrus 54M30 monitor via a HAL framebuffer console |
-| Storage | both Symbios 53C825A controllers found, the CD is the boot device, `disk.sys` and `fastfat` mount volumes |
-| Keyboard | the ADB keyboard works — Cuda transport in the HAL, real keystrokes into Setup |
-| Video | `cirrus.sys` initialises the 54M30 |
-| Clock | the real time, read from Cuda, so installed files are dated correctly |
-| Its own identity | Setup's hardware menu offers **"Apple Network Server 500/700"** and installs `HALSHINR.DLL` as the system's `hal.dll` — a `TXTSETUP.SIF` entry of our own, not another machine's HAL borrowed ([`tools/attic/mkoem.py`](tools/attic/mkoem.py)) |
-| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → format → `\WINNT` → copying → **"This portion of Setup has completed successfully"**, with no bugcheck in the run |
-| The next wall | the restart. Setup wrote the installed system's boot configuration through `HalSetEnvironmentVariable`, but that store is in RAM — this machine has no ARC NVRAM — so a reboot loses the `OSLOADER` path the firmware would need |
-
-Screenshots of every screen are in [`traces/`](traces/).
-
-**Not yet:** a completed install; a keyboard driver of our own (see *Borrowed parts* below);
-real hardware. The full list is in the charter, §9.
-
-## What we were given
-
-Two people had already done the hardest parts, and published them.
-
-**[`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes) — Wack0 (Rairii).** The
-contract between the NT kernel and a PowerPC HAL is barely documented: the DDK gives you the
-function names and almost nothing about the order, the ownership or the invariants. `halartx` is
-a HAL that works, and reading it collapsed what would have been months of guessing — probably
-several dead ends deep — into an afternoon. Who owns the IRQL and where it lives. Which
-phase does what, and in which order. That the kernel's dispatch table is reached through the
-PCR. Which routines you are allowed to leave as stubs, which is the difference between a HAL
-that boots and a HAL that hangs with no clue why. Nine of the lines in our boot path are
-recognisably the same as theirs because there is only one right way to write them.
-
-**[`maciNTosh`](https://github.com/Wack0/maciNTosh) — Wack0 (Rairii) — and
-[`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit) — MCJack123.** Cuda over
-Grand Central's VIA, written down for *this* machine's silicon rather than something adjacent.
-Because of it the Cuda handshake was never the unknown, and that matters more than it sounds:
-getting a keyboard working still took five attempts, and **not one of them failed on the
-protocol**. Every failure was a mistake of our own — interrupt ownership, calling a driver's
-callback at IRQL 21, a `KDPC` that wanted 8-byte alignment, a checksum over a padded file, a
-veneer poke lost in a rebuilt checkpoint.
-
-Credit where it divides: **Wack0 wrote that code.** `inc/halpxi.h` — the three-function
-HAL↔driver contract, and the only reason a keyboard driver could be talked to at all — is
-byte-identical between the two projects, and 95% of the `pxi.c` we read (208 of 268 substantive
-lines) is `maciNTosh`'s. **MCJack123 is the reason it reached us**: the Bandit port is what
-moves Cuda to Grand Central `+0x16000`, this machine's address, and what showed that ADB source
-for this chipset existed anywhere at all.
-
-None of the three projects owes us anything, and this HAL would not exist without them. That is
-a debt worth stating before anything else on this page; [`NOTICE`](NOTICE) records it file by
-file.
-
-## The story
-
-The interesting document in this repository is **[`STORY.md`](STORY.md)** — every wall hit on
-the way here, what each one turned out to be, and what it cost. Forty-four of them so far,
-including a few that are worth reading whatever you work on:
-
-- **The interrupt that never arrived** was not an interrupt problem: `HalAllocateAdapterChannel`
-  was a stub, so every SCSI request failed before the miniport was ever asked to do anything.
-- **An eight-byte return value** comes back through a hidden pointer in `r3` on this ABI, which
-  quietly turned `KeQueryPerformanceCounter` into a function that returned the frequency.
-- **"Setup could not load the keyboard layout file KBDUS.DLL"** was not about the file, the
-  media, or the loader's search path. It was a rooted DOS path with no drive to root it
-  against, because `IoAssignDriveLetters` was a stub and the machine had no drive letters at all.
-- **The compiler put back the misaligned access twice** — folding four byte loads into one
-  `lwz`, then merging byte stores into `stw` — each time turning careful code into an alignment
-  exception on a little-endian 604.
-
-## What is here
-
-| | |
-|---|---|
-| [`src/`](src/), [`include/`](include/) | the HAL: ~2,800 lines of C and PowerPC assembly, 69 exports, 26 kernel imports |
-| [`tools/`](tools/) | ELF→PE converter, import/export stub generator, ISO patcher, PowerPC disassembler, the test driver — 11 scripts, no external dependencies |
-| [`docs/`](docs/) | the charter and the session write-ups ([index](docs/README.md)) |
-| [`traces/`](traces/) | console output and screenshots backing every claim above |
-| [`PROVENANCE.md`](PROVENANCE.md) | every borrowed line, its origin and its licence |
-
-What the HAL does: `HalInitSystem` phases 0 and 1, the IRQL model and interrupt dispatch through
-Grand Central, the decrementer clock and timebase, Bandit PCI configuration space for both
-bridges with bus-address translation and `HalAssignSlotResources`, a machine-check handler that
-survives stray PCI probes, DMA adapter objects, the MBR partition table over synchronous IRPs,
-drive-letter assignment, an ARC firmware environment Setup can read and write, a Cuda/ADB
-transport, and a text console on the Cirrus 54M30.
-
-## Building
+Three ingredients, none of which can ship here: the Network Server's **Open Firmware 2.26NT
+ROM**, a **Windows NT 4.0 Workstation for PowerPC CD image** with its Product ID, and the
+[Granny Smith](https://github.com/pappadf/granny-smith) emulator.
 
 ```bash
 make                                       # -> build/hal.dll, build/adbport.sys
+make floppy ISO=/path/to/nt4-ppc.iso       # -> build/boot-floppy.img
+make disk                                  # -> build/nt-disk.img
 ```
 
-Needs `clang-18`, `lld-18` and `python3`; any recent LLVM works. The build is reproducible —
-two builds of the same tree are byte-identical (`SOURCE_DATE_EPOCH` overrides the PE timestamp
-if you want a real one). There is no Microsoft tool, header or import library in the build;
-[`tools/elf2pe.py`](tools/elf2pe.py) turns lld's ELF output into an NT PowerPC PE with function
-descriptors, a pre-filled import table and base relocations, the way NT's boot loader needs it.
-
-## Installing NT: bring your own CD, get a boot floppy
-
-Everything this project adds travels on **one 1.44 MB floppy image** that Setup reads as an
-ordinary manufacturer-supplied support disk. Your CD is never written to — not even in a
-copy-on-write layer.
-
-```bash
-make floppy ISO=/path/to/your/windows-nt-4.0-ppc.iso     # -> build/boot-floppy.img
-make disk                                                # -> build/nt-disk.img
-```
-
-**The disk holds no files.** It carries only a partition table with an ARC *system partition*,
-which Setup requires before it will start — its own refusal says why: *"System partitions are
-created and managed by a manufacturer-supplied configuration program."* On an IBM or Motorola ARC
-machine that program is `ARCINST.EXE`, run from the CD before Setup; this machine has no ARC
-firmware of its own, so [`tools/mkarcdisk.py`](tools/mkarcdisk.py) does that job here. Install to
-the **second** partition — the first exists to hold `OSLOADER.EXE` and `HAL.DLL` where the
-firmware can read them.
-
-The floppy build is the whole of the rest: it compiles the HAL and the ADB driver, takes the three
-files it cannot ship off the image you named — the ARC veneer and the Cirrus driver pair,
-decompressing the cabinet the CD stores one of them in — patches the veneer twice and the
-miniport once, and lays out the floppy.
-
-Then, with the emulator (below), at the Open Firmware `0 >` prompt:
+Then, on an emulated Network Server 500 with 64 MB, the CD at SCSI id 0 on the first controller,
+the disk at id 0 on the second and the floppy in the drive, at the Open Firmware `0 >` prompt:
 
 ```forth
 load fd:,\setup.of         \ once per machine; it resets at the end
 load-base loadsize eval
 
-load fd:,\boot.of          \ every boot, to install from the CD
+load fd:,\boot.of          \ to install from the CD
+load-base loadsize eval
+
+load fd:,\bootdisk.of      \ to start what you installed
 load-base loadsize eval
 ```
 
-and `\bootdisk.of` in place of `\boot.of` to start what you installed. The machine wants
-**64 MB** of RAM — not the 32 MB default — with the CD at SCSI id 0 on the first fast/wide
-controller and the disk at id 0 on the second.
+**[`docs/HOWTO.md`](docs/HOWTO.md) is the whole walk**, every Setup screen and the key it
+takes, including the three that are not Enter. [`docs/EMULATOR.md`](docs/EMULATOR.md) sets the
+emulator up.
 
-**The [wiki](https://github.com/pappadf/powermac-nt-hal/wiki) has the screen-by-screen
-walkthrough**, including the two steps that are easy to miss and expensive to get wrong: pressing
-`S` at the mass-storage screen to add the ADB driver (without it Setup dies with *"Setup did not
-find a keyboard"* several screens later), and leaving the file system as FAT.
+Needs `clang-18`, `lld-18` and `python3`. The build is reproducible: two builds of the same tree
+are byte-identical.
+
+### How it fits together
+
+The floppy is **not** the boot device. Open Firmware reads Microsoft's ARC veneer off it as raw
+blocks, with this project's patches already in the bytes, and boots the CD as pressed. Setup
+then meets the same floppy as an ordinary manufacturer's support disk and takes from it the HAL
+(*Apple Network Server 500/700*), the ADB driver, and the display entry. NT has no driver for
+the floppy drive, so `boot.of` reads the whole floppy into RAM first and the ADB driver serves it
+to Setup's copy phase from there. The 54M30, the two 53C825As and the Cuda clock are driven by
+NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
 > ### The floppy image cannot be redistributed
 >
 > Four of its ten files are Microsoft's, off your CD, and three of those are modified. Nothing
-> of theirs is stored in this repository — every one is read from the image you name on the
-> command line, which is why `make floppy` needs one. The two files that *are* ours,
-> `HALSHINR.DLL` and `ADBPORT.SYS`, are GPL-2.0-only and may be distributed with their source.
-> See [`PROVENANCE.md`](PROVENANCE.md).
+> of theirs is stored in this repository; every one is read from the image you name, which is why
+> `make floppy` needs one. The two files that *are* ours, `HALSHINR.DLL` and `ADBPORT.SYS`, are
+> GPL-2.0-only and may be distributed with their source. [`PROVENANCE.md`](PROVENANCE.md) has
+> the policy and every row behind it.
 
-## The emulator
+## What is here
 
-Development is against the [Granny Smith](https://github.com/pappadf/granny-smith) emulator,
-which has the breakpoints, device logpoints and checkpoints that make this tractable.
+| | |
+|---|---|
+| [`src/`](src/), [`include/`](include/) | the HAL: Grand Central interrupt dispatch, Bandit PCI configuration and address translation for both bridges, decrementer clock, Cuda transport (ADB, RTC, restart), ESCC and 54M30 consoles, the partition-table and drive-letter exports NT puts on the HAL side, and the OEM-disk hand-off |
+| [`drivers/adbport/`](drivers/adbport/) | the NT port driver: keyboard and pointer ports over the HAL's ADB callback, and the RAM floppy as `\Device\Floppy0` |
+| [`tools/`](tools/) | ELF-to-PE conversion, descriptor and thunk stubs, the floppy and disk builders, COFF and PE disassemblers, FAT readers and writers ([index](tools/README.md)) |
+| [`docs/`](docs/) | [how to run it](docs/HOWTO.md), the emulator setup, the session write-ups with their evidence, and the project's history ([index](docs/README.md)) |
+| [`traces/`](traces/) | a screenshot of every Setup screen reached, and the console transcripts the write-ups quote |
+| [`PROVENANCE.md`](PROVENANCE.md), [`NOTICE`](NOTICE) | every borrowed fact, its origin and its licence; whose work this builds on |
 
-> **The emulator support this needs is in Granny Smith's `main`**: PowerPC little-endian mode,
-> Bandit byte-lane reversal, the Cirrus 54M30 identification registers and its BitBLT engine
-> all merged in September 2026. Granny Smith's own integration tests `ans-nt-install` and
-> `ans-nt-installed-boot` install NT from this project's floppy and cold-boot the result to the
-> logon screen. **[`docs/EMULATOR.md`](docs/EMULATOR.md) is the step-by-step setup** — how to
-> build it, how to check it, and what you must supply yourself (ROM, NT CD, disk image).
+## The story
 
-[`tools/README.md`](tools/README.md) documents every option of every tool, and
-[`docs/CHARTER.md`](docs/CHARTER.md) §3.1 has the firmware sequence and the gotchas.
+The Network Server is a **TNT-class** machine, a Power Macintosh 9500 logic board with server
+changes: Hammerhead, two Bandit PCI bridges, Grand Central, Cuda over a VIA. Most of the HAL is
+about that family; the machine-specific part is a short list in `include/ans.h`. Nothing has
+been tried on a desktop 7500/8500/9500, which have no ARC firmware of their own.
 
-## Borrowed parts, and one you should know about
+**[`docs/STORY.md`](docs/STORY.md)** is every wall hit on the way, 51 of them, and what each
+turned out to be. A few worth reading whatever you work on: the interrupt that never arrived
+was a stubbed `HalAllocateAdapterChannel`; an eight-byte return value comes back through a
+hidden pointer in `r3` on this ABI; *"could not load the keyboard layout file"* was a machine
+with no drive letters; the SVR4 LR save slot is where NT keeps the caller's TOC; and the
+compiler put a misaligned access back twice, each time an alignment exception on a
+little-endian 604. The dated write-ups in [`docs/`](docs/README.md) carry the evidence.
 
-**[`NOTICE`](NOTICE) is the attribution document** — which upstream taught which file, at which
-commit, under which licence. [`PROVENANCE.md`](PROVENANCE.md) is the log behind it: one row per
-borrowed thing, added at the moment it was borrowed, with its extent (verbatim / adapted /
-rewritten from reading). Every source file repeats its own origin in its header. Nothing here
-was copied from either upstream; both are recorded as *rewritten from reading*, and that is
-still a derivation — which is where the licence comes from.
+## Borrowed parts
 
-The keyboard and mouse once worked by loading **maciNTosh's `usbadb.sys`**, a binary this
-project could run locally but never redistribute — it is GPL-2.0 with no published source, so
-GPL-2.0 §3 cannot be satisfied. That dependency is gone: [`drivers/adbport/`](drivers/adbport/)
-is this project's own port driver, built from source with the HAL, and it is what the floppy
-carries. `usbadb.sys` remains in the provenance log as the binary whose interface was read, never
-copied, to write it.
+**[`NOTICE`](NOTICE) is the attribution document**: which upstream taught which file, at which
+commit, under which licence. [`PROVENANCE.md`](PROVENANCE.md) is the log behind it, one row per
+borrowed thing, added when it was borrowed, with its extent. Nothing here was copied from either
+upstream; both are recorded as *rewritten from reading*, and that is still a derivation, which
+is where the licence comes from.
+
+`entii-for-workcubes`' `halartx` is the HAL this one learned its shape from: who owns the IRQL,
+which phase does what, which routines may be stubs. `maciNTosh` and `maciNTosh-bandit` are where
+the Cuda handshake and the three-function HAL-to-driver ADB contract come from; the keyboard
+once ran on `maciNTosh`'s `usbadb.sys`, a binary this project could run but not redistribute,
+and [`drivers/adbport/`](drivers/adbport/) replaced it.
 
 Nothing in this repository is derived from leaked Windows NT source. Everything came from the
 DDK-documented `Hal*` contract, the shipped binaries' own COFF symbol tables, observed behaviour
@@ -237,14 +125,13 @@ under a debugger, and hardware documentation. See [`CONTRIBUTING.md`](CONTRIBUTI
 
 ## A note on AI
 
-This project allows the use of AI — not only for code generation or code review, but for
-documentation as well. There is no commitment to track, at the file or commit level, which code
-was written with AI assistance and which was not. I know that AI may be a red flag for some
-people, and I fully respect that.
+This project allows the use of AI, for code, review and documentation alike. There is no
+commitment to track, at the file or commit level, which code was written with AI assistance and
+which was not. I know that AI may be a red flag for some people, and I fully respect that.
 
 ## Licence
 
-**GPL-2.0-only** — see [`LICENSE`](LICENSE). This is not a preference; it follows from the
+**GPL-2.0-only**, see [`LICENSE`](LICENSE). This is not a preference; it follows from the
 provenance log, because the HAL's structure was derived by reading GPL-2.0 sources. Every file
 carries `SPDX-License-Identifier: GPL-2.0-only` and `Copyright (C) 2026 powermac-nt-hal contributors`;
 [`AUTHORS`](AUTHORS) says who those are, [`NOTICE`](NOTICE) says whose work this builds on.
@@ -255,17 +142,13 @@ project is not affiliated with, authorised by or endorsed by any of them.
 
 ## Credits
 
-This project stands on other people's work:
-
 - The **TinkerDifferent** thread [*"Apple Network Server: MacOS-based ROMs
-  found"*](https://tinkerdifferent.com/threads/apple-network-server-macos-based-roms-found.4756/) —
+  found"*](https://tinkerdifferent.com/threads/apple-network-server-macos-based-roms-found.4756/):
   Mr. Macintosh, who got NT's Setup onto a real ANS 700 with a serial console and posted the
   transcript; ClassicHasClass, for the ROM dumps and the write-ups; joevt, for the ROM analysis
   and the detokenized firmware.
-- **Wack0 / Rairii** — [`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes),
-  the NT 4.0 PowerPC HAL this one learned its shape from;
-  [`maciNTosh`](https://github.com/Wack0/maciNTosh), NT for Power Macintosh, and the origin of
-  both the Cuda code and the `HalPxi*` HAL↔driver contract this HAL implements; and `peppc`.
-- **MCJack123** — [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit), the port
+- **Wack0 / Rairii**: [`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes),
+  [`maciNTosh`](https://github.com/Wack0/maciNTosh), and `peppc`.
+- **MCJack123**: [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit), the port
   of that ARC firmware to Bandit-class Power Macs, which is what put the Cuda/ADB code on this
   machine's hardware.

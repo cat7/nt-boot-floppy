@@ -185,4 +185,4 @@ HAL: system path -> 'D:\PPC\'
 Setup then comes up with **"Welcome to Setup"** and walks, one ADB keystroke at a time, through
 the mass-storage list, six pages of licence agreement and the hardware-confirmation screen.
 Screenshots: [`../traces/`](../traces/), `2026-09-06-setup-01-welcome.png` onward. The next wall
-is the partition table — see [STORY.md](../STORY.md) wall 32.
+is the partition table — see [STORY.md](STORY.md) wall 32.

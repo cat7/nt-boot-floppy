@@ -960,5 +960,5 @@ Each of these cost at least one run.
 | **miniport** | the hardware-specific half of an NT driver, sitting on a generic port driver (`scsiport`, `videoprt`). Stock Microsoft miniports drive this machine because the HAL answers their abstract questions |
 | **OEM disk** | Setup's own mechanism for hardware it does not know: pick `Other` at a class menu and it reads `txtsetup.oem` off a floppy. Not a patch, not a hack — the thing `TXTSETUP.SIF` editing was imitating |
 | **`txtsetup.oem`** | the INI file on that disk. `[Disks]` names it and says which directory its files are in, `[Computer]`/`[Keyboard]`/`[Display]`/`[SCSI]` offer entries, `[Files.<class>.<id>]` names the files |
-| **the ledger** | the table of workarounds at the end of [`../STORY.md`](../STORY.md): what each one is, why it is not a fix, and what a real fix would be |
+| **the ledger** | the table of workarounds at the end of [`STORY.md`](STORY.md): what each one is, why it is not a fix, and what a real fix would be |
 | **wall *n*** | a numbered obstacle in `STORY.md`'s narrative; the walls referenced here are 22, **25**, 26, 27, 46 and 52 |
