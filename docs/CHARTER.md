@@ -248,7 +248,7 @@ Three things had to be understood to get from 7 to 10; a HAL project inherits al
 
 | | |
 |---|---|
-| The emulator | [Granny Smith](https://github.com/pappadf/granny-smith) at branch **`ppc-le-mode-and-bandit-lane-reversal`** ([PR #135](https://github.com/pappadf/granny-smith/pull/135)), built with `make headless` (~1 min). **Not `main`** — little-endian mode, Bandit lane reversal and the Cirrus 54M30 id registers are all on that branch and unmerged as of 2026-09-07, and without them the firmware's little-endian reboot fails. Step by step: [`EMULATOR.md`](EMULATOR.md) |
+| The emulator | [Granny Smith](https://github.com/pappadf/granny-smith) `main` (the little-endian mode and Bandit lane reversal of its PR #135 merged in September 2026), built with `make headless` (~1 min). Step by step: [`EMULATOR.md`](EMULATOR.md) |
 | Open Firmware 2.26NT for the ANS | a ROM dump from the TinkerDifferent thread; the one used throughout has MD5 `ad405e01c663340c479668c70f741f1b` |
 | Windows NT 4.0 Workstation for PowerPC | the OEM 000-48303 (Oct 1996) CD image, MD5 `ab37556d72818ed082c1d01c2d7f1898`, archive.org item `windowsnt40workstationoem_00048303_alt` |
 | A staging disk | a raw disk image with `VENEER.EXE` (from the CD's `\PPC`) written at block `0x800`, which is where the ROM's `pe-loader` is told to read it from |
@@ -525,9 +525,10 @@ somewhere documented.
     `KEYBOARD_INPUT_DATA`, the `ClassService` callback), reading GameCube controllers instead
     of ADB but otherwise exactly the scaffolding needed.
 
-  Route one is what runs today. Route two is still the one to finish with, so that nothing
-  published depends on a binary this project may not redistribute; the HAL half of it is
-  already done, and only the port driver is left.
+  Route one is what ran until mid-September 2026. Route two is what runs now:
+  `drivers/adbport/` is this project's own port driver (keyboard, mouse, and the OEM-disk
+  ramdisk), built from source beside the HAL, so nothing published depends on a binary this
+  project may not redistribute.
 - **Setup's keyboard layout (solved).** `usetup.exe`'s *"could not load the keyboard layout
   file KBDUS.DLL"* was a rooted DOS path with no drive to root it against: `IoAssignDriveLetters`
   is a HAL export and ours was a stub, so the machine had no drive letters at all. Implementing
@@ -537,13 +538,17 @@ somewhere documented.
   exports too, and all four were stubs. With them implemented — and with the FAT system
   partition `ARCINST.EXE` would have created, written by `tools/mkarcdisk.py` — Setup reaches
   its partition screen and offers to install.
-- **Drive letters: the current wall.** `IoAssignDriveLetters` assigns one letter per disk
-  (`\Device\Harddisk%d\Partition1`) instead of one per recognised partition, in NT's order:
-  the first primary of each disk, then logical drives, then the remaining primaries, then the
-  CD-ROMs. Setup numbers the volumes that way itself, so the partition it installs to has no
-  symbolic link and the kernel ends up calling `_wcsicmp` on a `UNICODE_STRING`'s `Length`.
-  The fix needs `IoGetDeviceObjectPointer` to open each `\Device\Harddisk%d\Partition0` and
-  the partition table this HAL already reads.
+- **Drive letters (solved, wall 41).** One letter per disk instead of one per recognised
+  partition left the install volume with no `\DosDevices\` entry. `IoAssignDriveLetters` now
+  opens each `\Device\Harddisk%d\Partition0` with `IoGetDeviceObjectPointer` and assigns in
+  NT's order.
+- **The HAL's own identity (solved, wall 44).** The HAL no longer impersonates
+  `HALEAGLE.DLL`: `tools/mkoem.py` adds a `[Computer]`/`[Hal.Load]`/`[hal]` entry of its own,
+  so Setup offers *"Apple Network Server 500/700"* and installs `HALSHINR.DLL`. This also
+  retired the checksum failure that impersonation caused during the copy phase.
+- **The current wall is whatever the copy phase reaches.** Setup is copying Windows NT to the
+  disk; past that lie the first reboot from the installed system, which needs the ARC
+  environment Setup writes and the veneer to boot `OSLOADER` off the FAT system partition.
 - **Disk size (solved).** NT wants at least 158 MB and the first emulated disk was 8 MB. Not a
   HAL problem: a larger disk needs a new checkpoint chain, because the checkpoint is
   consolidated and its block count is fixed.
@@ -617,8 +622,8 @@ veneer recipe of §3 has not yet been tried on hardware.
   ClassicHasClass: the ROM dumps and the blog write-ups; joevt: ROM analysis and the
   detokenized firmware; Rairii/Wack0: maciNTosh, entii, peppc). Side thread
   *The Granny Smith emulator* for emulator matters.
-- Granny Smith: <https://github.com/pappadf/granny-smith>, PR #135 (little-endian mode; its
-  description carries the full NT story and the screen).
+- Granny Smith: <https://github.com/pappadf/granny-smith>; its PR #135 (little-endian mode,
+  merged) carries the full NT story and the screen in its description.
 - ClassicHasClass's write-ups on NT for PowerPC: <https://oldvcr.blogspot.com/>.
 
 ---
