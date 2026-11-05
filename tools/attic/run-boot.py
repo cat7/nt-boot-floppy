@@ -15,7 +15,7 @@ the same disk) — zero sectors keep whatever the base had.
 import argparse, glob, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GSH = os.path.join(HERE, 'gsh.py')
+GSH = os.path.join(HERE, '..', 'gsh.py')   # the live tools
 
 
 def delta_geometry(path):

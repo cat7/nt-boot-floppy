@@ -52,7 +52,7 @@ R=<path to the ANS ROM>
 ./build/headless/gs-headless --speed=turbo --no-prompt -q \
     rom=$R --var ROM=$R --checkpoint-dir=tmp/ckpt script=tmp/my.gs > tmp/my.log 2>&1
 
-# against a long-lived daemon (needed by tools/run-boot.py, which splices a disk image)
+# against a long-lived daemon (needed by tools/attic/run-boot.py, which splices a disk image)
 ./build/headless/gs-headless --daemon --port=6820 --speed=turbo --no-prompt -q \
     --checkpoint-dir=tmp/ckpt-daemon rom=$R --var ROM=$R &
 python3 tools/gsh.py 'echo alive'
