@@ -195,7 +195,9 @@ ARC_STATUS io_get_file_information(ULONG fd, PFILE_INFORMATION fi)
  * extent LBA (both-endian, 8 bytes), size (both-endian, 8 bytes), 7 bytes of date, flags, unit
  * size, gap, volume sequence (4), name length, name; names are upper case with a ";1" version. */
 #define ISO_SECTOR 2048
-static ULONG iso_le32(const UCHAR *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((ULONG)p[3] << 24); }
+/* volatile, or clang folds the four byte loads into one lwz at a misaligned address, which is an
+ * alignment exception on a little-endian 604 (DEFAULT CATCH code FFF00600 at 0x54FFC, 5 Nov) */
+static ULONG iso_le32(const UCHAR *p) { volatile const UCHAR *q = p; return q[0] | (q[1] << 8) | (q[2] << 16) | ((ULONG)q[3] << 24); }
 
 static ARC_STATUS iso_read_sector(ULONG fd, ULONG lba, UCHAR *buf)
 {
