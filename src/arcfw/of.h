@@ -46,6 +46,8 @@ LONG of_claim_real(ULONG addr, ULONG size);                 /* claim phys = virt
 
 /* property helpers */
 BOOLEAN of_get_int(OF_PHANDLE node, const CHAR *name, PULONG out);
+LONG of_get_ints(OF_PHANDLE node, const CHAR *name, PULONG buf, ULONG len);   /* cells swapped to host order */
+ULONG of_bswap(ULONG v);
 LONG of_get_str(OF_PHANDLE node, const CHAR *name, CHAR *buf, ULONG len);   /* -1 if absent */
 BOOLEAN of_has_prop(OF_PHANDLE node, const CHAR *name);
 

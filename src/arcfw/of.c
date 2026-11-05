@@ -160,10 +160,21 @@ LONG of_claim_real(ULONG addr, ULONG size)
     return of_map(addr & 0x7FFFFFFFu, addr, size, -1);
 }
 
+/* Integer properties are stored big-endian in the device tree, whatever mode the processor
+ * runs in; this firmware runs little-endian (the N2 reboot), so every cell is swapped.
+ * Measured 5 November: /chosen's stdout read as 0x00658dff, which is 0xff8d6500 -- an address
+ * inside Open Firmware -- byte-reversed, and `write` on it answered -1. */
+ULONG of_bswap(ULONG v) { return (v << 24) | ((v & 0xFF00u) << 8) | ((v >> 8) & 0xFF00u) | (v >> 24); }
+LONG of_get_ints(OF_PHANDLE node, const CHAR *name, PULONG buf, ULONG len)
+{
+    LONG n = of_getprop(node, name, buf, len);
+    for (LONG i = 0; i + 4 <= n; i += 4) buf[i / 4] = of_bswap(buf[i / 4]);
+    return n;
+}
 BOOLEAN of_get_int(OF_PHANDLE node, const CHAR *name, PULONG out)
 {
     ULONG v;
-    if (of_getprop(node, name, &v, 4) != 4) return FALSE;
+    if (of_get_ints(node, name, &v, 4) != 4) return FALSE;
     *out = v;
     return TRUE;
 }

@@ -60,8 +60,8 @@ VOID memory_init(VOID)
     OF_PHANDLE mem = of_finddevice("/memory");
     if (mem == OF_NONE) fatal("no /memory node");
     ULONG reg[32], avail[64];
-    LONG nreg = of_getprop(mem, "reg", reg, sizeof reg);
-    LONG navail = of_getprop(mem, "available", avail, sizeof avail);
+    LONG nreg = of_get_ints(mem, "reg", reg, sizeof reg);
+    LONG navail = of_get_ints(mem, "available", avail, sizeof avail);
     if (nreg < 8) fatal("/memory has no reg property");
     if (navail < 0) navail = 0;
     ndesc = 0;

@@ -89,7 +89,7 @@ static VOID add_cpu(OF_PHANDLE cpu)
 static VOID add_memory(OF_PHANDLE mem)
 {
     ULONG reg[8] = { 0, 0x04000000 };
-    of_getprop(mem, "reg", reg, sizeof reg);
+    of_get_ints(mem, "reg", reg, sizeof reg);
     PARC_NODE m = new_node(root, MemoryClass, SystemMemory, 0, 0, "memory");
     PCM_PARTIAL_RESOURCE_LIST l = new_list(m, 1, 0);
     desc_memory(&l->PartialDescriptors[0], reg[0], reg[1]);
@@ -158,7 +158,7 @@ static VOID add_scsi_adapter(PARC_NODE parent, OF_PHANDLE node, const CHAR *path
     if (pci) {
         /* the real registers and interrupt, from assigned-addresses and AAPL,interrupts; the
          * veneer's list had a port at 0 and interrupt 1, which the HAL had to repair */
-        ULONG aa[40]; LONG n = of_getprop(node, "assigned-addresses", aa, sizeof aa);
+        ULONG aa[40]; LONG n = of_get_ints(node, "assigned-addresses", aa, sizeof aa);
         ULONG mem = 0, memlen = 0, io = 0, iolen = 0, irq = 0;
         for (LONG i = 0; i + 4 < n / 4 + 1 && i + 4 <= n / 4; i += 5) {
             ULONG space = (aa[i] >> 24) & 3;
@@ -244,7 +244,7 @@ static VOID add_gc_devices(PARC_NODE pci, OF_PHANDLE gc, const CHAR *gc_path)
 static VOID add_bandit(OF_PHANDLE bandit, ULONG key)
 {
     ULONG reg[4] = { 0xF2000000u, 0x02000000u };
-    of_getprop(bandit, "reg", reg, sizeof reg);
+    of_get_ints(bandit, "reg", reg, sizeof reg);
     PARC_NODE pci = new_node(root, AdapterClass, MultiFunctionAdapter, key, 0, "PCI");
     pci->OfPhandle = bandit;
     PCM_PARTIAL_RESOURCE_LIST l = new_list(pci, 1, 0);
@@ -262,7 +262,7 @@ static VOID add_bandit(OF_PHANDLE bandit, ULONG key)
             CHAR model[32]; of_get_str(c, "model", model, sizeof model);
             PARC_NODE v = new_node(pci, ControllerClass, DisplayController, 0, ARC_FLAG_CONSOLEOUT | ARC_FLAG_OUTPUT, model[0] ? model : name);
             v->OfPhandle = c; v->OfPath = strdup_(path);
-            ULONG aa[20]; LONG n = of_getprop(c, "assigned-addresses", aa, sizeof aa);
+            ULONG aa[20]; LONG n = of_get_ints(c, "assigned-addresses", aa, sizeof aa);
             ULONG fb = 0, fblen = 0x01000000;
             for (LONG i = 0; i + 4 < n / 4 + 1 && i + 4 <= n / 4; i += 5)
                 if (((aa[i] >> 24) & 3) == 2 && aa[i + 4] >= 0x100000) { fb = aa[i + 2]; fblen = aa[i + 4]; }
