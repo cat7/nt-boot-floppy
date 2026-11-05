@@ -15,8 +15,15 @@
 extern VOID cache_sweep(ULONG start, ULONG len);
 extern VOID arcfw_call_desc(PVOID desc, ULONG argc, PCHAR *argv, PCHAR *envp) __attribute__((noreturn));
 
+static UCHAR *whole; static ULONG whole_size;     /* the file in memory, when it came that way */
+
 static ARC_STATUS read_at(ULONG fd, ULONG off, PVOID buf, ULONG n)
 {
+    if (whole) {
+        if (off + n > whole_size || off + n < off) return EIO;
+        memcpy(buf, whole + off, n);
+        return ESUCCESS;
+    }
     LARGE_INTEGER li; li.HighPart = 0; li.LowPart = off;
     ULONG got;
     ARC_STATUS s = io_seek(fd, &li, SeekAbsolute);
@@ -33,7 +40,14 @@ ARC_STATUS load_image(const CHAR *arcpath, PVOID *entry_desc, PVOID *low, PVOID 
     if (s != ESUCCESS) { con_printf("arcfw: cannot open '%s' (%u)\n", arcpath, s); return s; }
     UCHAR hdr[0x100];
     ULONG base_off = 0;
-    if ((s = read_at(fd, 0, hdr, 0x40)) != ESUCCESS) goto out;
+    whole = NULL;
+    if ((s = read_at(fd, 0, hdr, 0x40)) != ESUCCESS) {
+        /* a file Open Firmware will not read piecemeal (its ISO 9660 package): whole, then */
+        PVOID w; ULONG wn;
+        if (io_load_whole(fd, &w, &wn) != ESUCCESS) goto out;
+        whole = w; whole_size = wn;
+        if ((s = read_at(fd, 0, hdr, 0x40)) != ESUCCESS) goto out;
+    }
     if (hdr[0] == 'M' && hdr[1] == 'Z') {                  /* a PE: the COFF header after the stub */
         ULONG pe = *(ULONG *)&hdr[0x3C];
         if ((s = read_at(fd, pe, hdr, 4)) != ESUCCESS) goto out;

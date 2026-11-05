@@ -186,3 +186,28 @@ ARC_STATUS io_get_file_information(ULONG fd, PFILE_INFORMATION fi)
     fi->Attributes = f->is_file ? 0 : 0;
     return ESUCCESS;
 }
+
+/* The whole of a file at once, through the instance's `load` method -- what Open Firmware's own
+ * `load` command does.  Its iso-9660-files package answers -1 to read and seek (measured 5
+ * November on \\PPC\\SETUPLDR), and `load` is the one way it gives a file up.  The buffer is a
+ * megabyte claimed at 48 MB, below the floppy's staging areas and above anything NT's loaders
+ * link at; it stays claimed, which the memory descriptors report as firmware-temporary. */
+#define WHOLE_PHYS 0x03000000u
+#define WHOLE_SIZE 0x00100000u
+static BOOLEAN whole_claimed;
+ARC_STATUS io_load_whole(ULONG fd, PVOID *buf, PULONG size)
+{
+    if (fd >= MAX_FD || !fds[fd].open || !fds[fd].is_file) return EBADF;
+    if (!whole_claimed) {
+        if (of_claim_real(WHOLE_PHYS, WHOLE_SIZE) < 0) return ENOMEM;
+        whole_claimed = TRUE;
+    }
+    ULONG in[1] = { WHOLE_PHYS }, out[1];
+    if (of_call_method("load", fds[fd].ih, 1, 1, in, out) || out[0] == 0 || out[0] > WHOLE_SIZE) {
+        DBG(DBG_IO, "arcfw: load of fd %u through the instance's load method failed\n", fd);
+        return EIO;
+    }
+    DBG(DBG_IO, "arcfw: fd %u loaded whole: %u bytes at %08x\n", fd, out[0], WHOLE_PHYS);
+    *buf = (PVOID)WHOLE_PHYS; *size = out[0];
+    return ESUCCESS;
+}
