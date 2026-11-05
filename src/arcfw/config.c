@@ -108,6 +108,38 @@ static const CHAR *scsi_type_name(UCHAR t, CONFIGURATION_TYPE *ctl, CONFIGURATIO
     }
 }
 
+/* Which targets to ask.  Every absent target costs Open Firmware a selection timeout --
+ * 0.38 billion instructions each on the emulator, 2.3 billion per controller for a scan of
+ * 0..15 (measured 5 November), which is more than the rest of the boot to the kernel -- and
+ * the veneer's tree never had anything but target 0.  So: target 0, plus whatever the boot
+ * variables name as scsi(this)disk(N), plus ARCFW-SCSI-TARGETS on /options ('0,3,5' per
+ * controller key, 'all' for everything) for a machine with more. */
+static ULONG wanted_targets(ULONG ctl_key)
+{
+    ULONG mask = 1;
+    static const CHAR *vars[] = { "SYSTEMPARTITION", "OSLOADPARTITION", "OSLOADER", "ARCFW-SCSI-TARGETS" };
+    for (ULONG v = 0; v < 4; v++) {
+        const CHAR *val = env_lookup(vars[v]);
+        if (!val) continue;
+        if (v == 3) {
+            if (strcmp(val, "all") == 0) return 0xFFFF;
+            for (const CHAR *e = val; *e; e++) if (*e >= '0' && *e <= '9') mask |= 1u << (ULONG)(*e - '0');
+            continue;
+        }
+        for (const CHAR *e = val; *e; e++) {
+            if (strncmp(e, "scsi(", 5) == 0) {
+                ULONG c = 0; const CHAR *q = e + 5;
+                while (*q >= '0' && *q <= '9') c = c * 10 + (ULONG)(*q++ - '0');
+                if (c != ctl_key || strncmp(q, ")disk(", 6) != 0) continue;
+                ULONG t = 0; q += 6;
+                while (*q >= '0' && *q <= '9') t = t * 10 + (ULONG)(*q++ - '0');
+                if (t < 16) mask |= 1u << t;
+            }
+        }
+    }
+    return mask;
+}
+
 static VOID probe_scsi(PARC_NODE adapter, OF_PHANDLE ctl, const CHAR *ctl_path)
 {
     ULONG initiator = 7;
@@ -116,8 +148,9 @@ static VOID probe_scsi(PARC_NODE adapter, OF_PHANDLE ctl, const CHAR *ctl_path)
     if (!ih) { con_printf("arcfw: cannot open %s to probe it\n", ctl_path); return; }
     static UCHAR inq[256] __attribute__((aligned(16)));
     static UCHAR cdb[6] __attribute__((aligned(16)));
+    ULONG wanted = wanted_targets(adapter->Component.Key);
     for (ULONG target = 0; target < 16; target++) {
-        if (target == initiator) continue;
+        if (target == initiator || !(wanted & (1u << target))) continue;
         /* set-address ( lun target -- ), target on top: the array lists the top first, as the
          * veneer's registers do (r8 = target, r9 = 0) */
         ULONG in[2] = { target, 0 }, out[2];
