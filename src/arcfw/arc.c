@@ -175,7 +175,17 @@ ARC_STATUS arc_GetReadStatus(ULONG fd) { return io_get_read_status(fd); }
 ARC_STATUS arc_Write(ULONG fd, PVOID buf, ULONG n, PULONG count) { return io_write(fd, buf, n, count); }
 ARC_STATUS arc_Seek(ULONG fd, LARGE_INTEGER *off, SEEK_MODE mode) { return io_seek(fd, off, mode); }
 ARC_STATUS arc_Mount(PCHAR path, MOUNT_OPERATION op) { (void)path; (void)op; return ESUCCESS; }
-ARC_STATUS arc_GetEnvironmentVariable(PCHAR name, USHORT len, PCHAR buf) { return env_get(name, len, buf); }
+/* The vector's GetEnvironmentVariable is the ARC one: it returns the value, or NULL when there
+ * is none.  (The three-argument status-returning form is the kernel's HalGetEnvironmentVariable,
+ * not this.)  A first arcfw returned ENOENT here; OSLOADER took 2 for a string, read 'HPTSIZE'
+ * as set, sized the hashed page table for a small machine and the kernel died with bugcheck 0x50
+ * at user-mode start (5 November). */
+PCHAR arc_GetEnvironmentVariable(PCHAR name)
+{
+    const CHAR *v = env_lookup(name);
+    DBG(DBG_ENV, "arcfw: GetEnvironmentVariable('%s') -> %s\n", name, v ? v : "(none)");
+    return (PCHAR)v;
+}
 ARC_STATUS arc_SetEnvironmentVariable(PCHAR name, PCHAR value) { return env_set(name, value); }
 ARC_STATUS arc_GetFileInformation(ULONG fd, PFILE_INFORMATION fi) { return io_get_file_information(fd, fi); }
 ARC_STATUS arc_SetFileInformation(ULONG fd, ULONG attr_set, ULONG attr_clear) { (void)fd; (void)attr_set; (void)attr_clear; return EROFS; }
