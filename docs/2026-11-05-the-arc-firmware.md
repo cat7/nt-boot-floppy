@@ -144,7 +144,12 @@ methods include `set-address`, `short-data-command`, `inquiry`, `probe-target`, 
 the veneer: granny-smith's `ans-nt-installed-boot` row, pointed at a floppy built with
 `--arc-firmware build/arcfw.exe`, passes rungs B1 to B4 (firmware prompt, little-endian reboot,
 NT on the HAL with the ADB classes connected and the system in D:\WINNT, the logon screen).
-Rung B5 (Ctrl+Alt+Del, the Logon Information dialog, Return, the desktop): *(B5-RESULT)*.
+Rung B5 (Ctrl+Alt+Del, the Logon Information dialog, Return, the desktop): the Logon
+Information dialog matches, Administrator logs on, and the desktop comes up with its *Welcome
+to Windows NT* dialog, pixel for pixel the row's golden but for the taskbar clock (see below).
+With the probe and the image trimmed, the kernel's banner comes 7.1 billion instructions after
+power-on through arcfw against 9.8 billion through the veneer: this firmware is the faster of
+the two.
 
 What it took, after the image loaded and ran -- each one measured, none guessed:
 
