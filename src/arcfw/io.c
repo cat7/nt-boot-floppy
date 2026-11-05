@@ -140,8 +140,27 @@ ARC_STATUS io_seek(ULONG fd, LARGE_INTEGER *off, SEEK_MODE mode)
     ULONG hi = (ULONG)off->HighPart, lo = off->LowPart;
     if (mode == SeekRelative) { ULONG nlo = f->pos_lo + lo; hi += f->pos_hi + (nlo < lo ? 1 : 0); lo = nlo; }
     DBG(DBG_RW, "arcfw: Seek(%u) to %x:%08x\n", fd, hi, lo);
-    if (of_seek(f->ih, hi, lo) < 0) return EIO;
-    f->pos_hi = hi; f->pos_lo = lo;
+    if (of_seek(f->ih, hi, lo) >= 0) { f->pos_hi = hi; f->pos_lo = lo; return ESUCCESS; }
+    if (!f->is_file || hi) return EIO;
+    /* Open Firmware's iso-9660-files package has no seek (its FAT package has): measured
+     * 5 November, Open of \\PPC\\SETUPLDR on the CD succeeding and the first Seek answering
+     * -1.  So a file that cannot seek is read forward to the offset, and reopened first for an
+     * offset behind the current one; an image's header is read three times that way, which is
+     * nothing against the file. */
+    if (lo < f->pos_lo || f->pos_hi) {
+        of_close(f->ih);
+        f->ih = of_open(f->path);
+        if (!f->ih) { f->open = FALSE; return EIO; }
+        f->pos_hi = 0; f->pos_lo = 0;
+    }
+    static UCHAR skip[4096] __attribute__((aligned(16)));
+    while (f->pos_lo < lo) {
+        ULONG n = lo - f->pos_lo; if (n > sizeof skip) n = sizeof skip;
+        LONG r = of_read(f->ih, skip, n);
+        if (r <= 0) return EIO;
+        f->pos_lo += (ULONG)r;
+    }
+    DBG(DBG_RW, "arcfw: Seek(%u) reached %08x by reading\n", fd, f->pos_lo);
     return ESUCCESS;
 }
 
