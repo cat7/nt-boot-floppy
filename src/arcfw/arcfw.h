@@ -152,6 +152,7 @@ typedef struct _SYSTEM_PARAMETER_BLOCK {
 #define ARC_SPB_PHYS   0x4000u
 #define ARC_KSEG0      0x80000000u
 #define ARC_KSEG0_SIZE 0x00800000u                /* the veneer maps 8 MB; the loader lives there */
+#define ARC_KSEG0_PAGES (ARC_KSEG0_SIZE >> 12)
 #define KSEG0(p)   ((PVOID)((ULONG)(p) | ARC_KSEG0))
 #define PHYS(v)    ((ULONG)(v) & ~ARC_KSEG0)
 
