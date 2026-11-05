@@ -69,15 +69,25 @@ end = int(sys.argv[3], 16) if len(sys.argv) > 3 else text[1] + text[2]
 # `lwz r2` pattern; else environment
 toc = int(os.environ['TOC'], 16) if os.environ.get('TOC') else None
 if toc is None:
+    # the entry point names the entry descriptor in a driver (a .sys with no export table):
+    # {entry, toc}, in INIT or .data -- the drivers' linker put it in whichever section the
+    # entry routine's TOC anchor lives in, and kbdclass.sys/mouclass.sys have no .data at all
+    # (the TOC anchor itself may sit past the image's last section: it is the TOC's start plus
+    # 0x8000, so that signed 16-bit displacements reach all of it)
+    e1, t1 = struct.unpack_from('<II', img(entry, 8), 0)
+    if any(s[1] <= e1 < s[1] + s[2] for s in secs) and t1 and t1 != e1:
+        toc = t1
+dsecs = [s for s in secs if s[0] == '.data']
+if toc is None and dsecs:
     # scan .data for a descriptor {entry, toc} whose entry == entry point
-    dsec = [s for s in secs if s[0] == '.data'][0]
+    dsec = dsecs[0]
     for a in range(dsec[1], dsec[1] + dsec[2] - 8, 4):
         e1, t1 = struct.unpack_from('<II', img(a, 8), 0)
         if e1 == entry: toc = t1; break
-if toc is None:
+if toc is None and dsecs:
     # fallback: the most common second word among {text-address, data-address} pairs in .data
     from collections import Counter
-    dsec = [s for s in secs if s[0] == '.data'][0]
+    dsec = dsecs[0]
     tsec = text if 'text' in dir() else [s for s in secs if s[0] == '.text'][0]
     c = Counter()
     for a in range(dsec[1], dsec[1] + dsec[2] - 8, 4):
@@ -85,6 +95,7 @@ if toc is None:
         if tsec[1] <= e1 < tsec[1] + tsec[2] and dsec[1] <= t1 < dsec[1] + dsec[2]:
             c[t1] += 1
     toc = c.most_common(1)[0][0] if c else 0
+if toc is None: toc = 0
 print(f'# base {base:08x} entry {entry:08x} toc {toc:08x} sections {[ (s[0], hex(s[1]), hex(s[2])) for s in secs]}')
 def note(insn):
     op = insn >> 26; ra = (insn >> 16) & 31; rd = (insn >> 21) & 31
