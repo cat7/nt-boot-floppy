@@ -138,7 +138,9 @@ load-base loadsize eval
 
 `bootdisk.of` loads this project's ARC firmware (`ARCFW.EXE`, built from `src/arcfw`; no
 Microsoft code runs before NT's loader), sets the ARC environment for this boot, and points the
-firmware at the disk. `Arcfw 0.1` reports what it found, OSLOADER's menu shows *Windows NT
+firmware at the disk. `Arcfw 0.1` reports what it found (it asks only SCSI target 0 and the
+targets the boot variables name; `setenv ARCFW-SCSI-TARGETS all` at the prompt makes it scan
+every id, at a selection timeout for each absent one), OSLOADER's menu shows *Windows NT
 Workstation Version 4.00*, the kernel loads, the HAL comes up, and after `autochk` the Setup
 wizard is drawn. Every page takes Enter on its default button except the three marked.
 
