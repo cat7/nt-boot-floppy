@@ -24,7 +24,7 @@ SRCS_S = $(wildcard src/*.S)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS_C)) $(patsubst src/%.S,$(BUILD)/%.o,$(SRCS_S)) \
        $(BUILD)/imports.o $(BUILD)/exports.o
 
-all: $(BUILD)/hal.dll $(BUILD)/adbport.sys
+all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/arcfw.exe
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -78,6 +78,28 @@ $(BUILD)/adbport.sys: $(BUILD)/adbport.elf $(ADB)/adbport.exports $(TOOLS)/elf2p
 
 disasm: $(BUILD)/hal.elf
 	$(OBJDUMP) -d -r $< > $(BUILD)/hal.lst
+
+# ---- arcfw.exe: the ARC firmware shim that stands in for Microsoft's VENEER.EXE (src/arcfw) ----
+# A raw COFF at 0x50000, as the veneer is, so pe-loader's init-program and `go` take it; no
+# imports, no exports, no TOC: plain clang code at a fixed address.
+ARCFW      = src/arcfw
+ARCFW_SRCS = $(wildcard $(ARCFW)/*.c)
+ARCFW_OBJS = $(patsubst $(ARCFW)/%.c,$(BUILD)/arcfw/%.o,$(ARCFW_SRCS)) $(BUILD)/arcfw/crt0.o $(BUILD)/arcfw/thunks.o $(BUILD)/arcfw/cache.o
+
+$(BUILD)/arcfw:
+	mkdir -p $(BUILD)/arcfw
+
+$(BUILD)/arcfw/%.o: $(ARCFW)/%.c $(ARCFW)/arcfw.h $(ARCFW)/of.h | $(BUILD)/arcfw
+	$(CLANG) $(CFLAGS) -I$(ARCFW) -c $< -o $@
+
+$(BUILD)/arcfw/%.o: $(ARCFW)/%.S | $(BUILD)/arcfw
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/arcfw.elf: $(ARCFW_OBJS) $(ARCFW)/arcfw.ld
+	$(LLD) -T $(ARCFW)/arcfw.ld --emit-relocs -nostdlib -static -o $@ $(ARCFW_OBJS)
+
+$(BUILD)/arcfw.exe: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
+	python3 $(TOOLS)/elf2pe.py $< $@ --raw-coff --entry _start --dllname arcfw.exe
 
 # The boot floppy, from your own Windows NT 4.0 PowerPC CD:
 #

@@ -455,7 +455,8 @@ def env_property_lines(env, indent='   '):
 
 
 def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev, env,
-                     loader_base=0x80600000, loader_size=0x4A800, stage=0x3D00000, load=0x3E00000):
+                     loader_base=0x80600000, loader_size=0x4A800, stage=0x3D00000, load=0x3E00000,
+                     firmware='VENEERD.EXE'):
     """\\BOOTDISK.OF: boot the system text-mode Setup installed on the hard disk.
 
     The same shape as \\BOOT.OF with the OEM disk left out, a `--for disk` veneer read instead of
@@ -481,8 +482,12 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
          '\\     load fd:,\\bootdisk.of',
          '\\     load-base loadsize eval',
          '\\',
-         '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path',
-         '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment goes onto /options for this',
+         ('\\ The ARC firmware read here is this project\'s own (src/arcfw), not Microsoft\'s veneer.'
+          if firmware == 'ARCFW.EXE' else
+          '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path'),
+         ('\\ It takes OSLOADER and the rest of the ARC environment from /options, set below for this'
+          if firmware == 'ARCFW.EXE' else
+          '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment goes onto /options for this'),
          '\\ boot only; nothing is patched at run time.',
          '',
          '0 value nt-pe',
@@ -578,6 +583,10 @@ def main():
     ap.add_argument('--disk-veneer', metavar='PATH',
                     help='VENEER.EXE patched by `mkveneer.py --for disk`; placed as \\PPC\\VENEERD.EXE, '
                          'contiguous, with \\BOOTDISK.OF to boot the installed system from it')
+    ap.add_argument('--arc-firmware', metavar='PATH',
+                    help="this project's own ARC firmware (build/arcfw.exe) in place of the disk veneer: "
+                         'placed as \\PPC\\ARCFW.EXE, contiguous, and \\BOOTDISK.OF starts it instead of '
+                         "Microsoft's VENEERD.EXE, which is then not put on the disk")
     ap.add_argument('--osloader-exe', metavar='PATH',
                     help="OSLOADER.EXE (the CD's PPC/OSLOADER.EXE, or the installed disk's), for its "
                          "ImageBase and SizeOfImage; default: NT 4.0's, 0x80600000 and 0x4A800")
@@ -642,7 +651,13 @@ def main():
     if vcluster != 2:
         sys.exit('the veneer did not land on cluster 2 — it must be allocated first')
     vblocks = (len(veneer) + SECTOR - 1) // SECTOR
+    dname = 'VENEERD.EXE'
     dveneer = read(a.disk_veneer) if a.disk_veneer else None
+    if a.arc_firmware:
+        if dveneer is not None:
+            print('  (--disk-veneer ignored: --arc-firmware boots the installed system)')
+        dveneer = read(a.arc_firmware)
+        dname = 'ARCFW.EXE'
     if dveneer is not None:
         dcluster, dlba = fs.alloc(dveneer)          # second, so contiguous as well
         dblocks = (len(dveneer) + SECTOR - 1) // SECTOR
@@ -654,7 +669,7 @@ def main():
     # from the disk, and Setup asked for `\\halshinr.dll` when that field was `\\`.
     ppc = [fs.dirent('VENEER.EXE', vcluster, len(veneer))]
     if dveneer is not None:
-        ppc.append(fs.dirent('VENEERD.EXE', dcluster, len(dveneer)))
+        ppc.append(fs.dirent(dname, dcluster, len(dveneer)))
     root = []
     for name, path, where in (('SETUPLDR', a.setupldr, ppc),
                               ('TXTSETUP.SIF', a.sif, ppc),
@@ -700,7 +715,8 @@ def main():
             if a.osloader_exe:
                 h = read(a.osloader_exe)
                 lb, ls = struct.unpack_from('<I', h, 20 + 28)[0], struct.unpack_from('<I', h, 20 + 56)[0]
-            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, env, lb, ls).encode('ascii')
+            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, env, lb, ls,
+                                  firmware=dname).encode('ascii')
             c3, _ = fs.alloc(bd)
             root.append(fs.dirent('BOOTDISK.OF', c3, len(bd)))
             print(f'  \\BOOTDISK.OF   {len(bd)} bytes   the installed system: load fd:,\\bootdisk.of  '
@@ -732,7 +748,7 @@ def main():
           f'{vblocks} blocks ({vblocks:#x}) — contiguous')
     print(f'  \\BOOT.OF reads it with read-blocks from block {vlba:#x}, {vblocks:#x} blocks')
     if dveneer is not None:
-        print(f'  \\PPC\\VENEERD.EXE  {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
+        print(f'  \\PPC\\{dname:12} {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
               f'{dblocks} blocks ({dblocks:#x}) — contiguous, for \\BOOTDISK.OF')
 
 
