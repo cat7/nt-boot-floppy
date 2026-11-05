@@ -3,13 +3,13 @@
 # Copyright (C) 2026 powermac-nt-hal contributors
 """mkfloppy.py --iso <windows-nt-4.0-ppc.iso> — build the boot floppy, start to finish.
 
-One command, one input you have to own.  It takes the four files the floppy needs off your CD,
-patches the two veneers, and lays the image out with the HAL and the ADB driver this repository
-builds.  `make floppy ISO=<path>` is this with the compile in front of it.
+One command, one input you have to own.  It takes the three files the floppy needs off your CD,
+patches the veneer twice and the display miniport once, and lays the image out with the HAL and
+the ADB driver this repository builds.  `make floppy ISO=<path>` is this with the compile in front of it.
 
-WHAT COMES OFF YOUR CD, AND WHY IT MATTERS.  Five of the eleven files on the finished floppy are
-Microsoft's -- the two veneers, SETUPLDR, and the Cirrus driver pair -- and three of those are
-modified.  **A built floppy image therefore cannot be redistributed.**  Nothing of theirs is
+WHAT COMES OFF YOUR CD, AND WHY IT MATTERS.  Four of the ten files on the finished floppy are
+Microsoft's -- the two veneers and the Cirrus driver pair -- and three of those are modified.
+(SETUPLDR is not among them: the veneer loads it from the CD, which is the boot device.)  **A built floppy image therefore cannot be redistributed.**  Nothing of theirs is
 stored in this repository; every one of them is read from the image you name on the command
 line, which is why this tool needs one.  See PROVENANCE.md.
 """
@@ -23,7 +23,6 @@ import isocat  # noqa: E402
 # (member on the CD, what we call it, what it is)
 NEEDED = [
     (r'\PPC\VENEER.EXE', 'veneer.exe', "the ARC firmware veneer"),
-    (r'\PPC\SETUPLDR', 'SETUPLDR', "NT's text-mode Setup loader"),
     (r'\PPC\CIRRUS.SYS', 'cirrus.sys', 'the display miniport'),
     (r'\PPC\CIRRUS.DLL', 'cirrus.dll', 'the display driver'),
 ]
@@ -57,7 +56,7 @@ def main():
     work = os.path.join(ROOT, a.work)
     os.makedirs(work, exist_ok=True)
 
-    print(f'Taking four files off {a.iso}:')
+    print(f'Taking three files off {a.iso}:')
     for member, name, what in NEEDED:
         blob = isocat.read(a.iso, member)
         with open(os.path.join(work, name), 'wb') as g:
@@ -77,7 +76,6 @@ def main():
                '--out', a.out,
                '--veneer', os.path.join(work, 'veneer-fd.exe'),
                '--disk-veneer', os.path.join(work, 'veneer-disk.exe'),
-               '--setupldr', os.path.join(work, 'SETUPLDR'),
                '--hal', a.hal,
                '--adb-driver', a.adb_driver,
                '--display-driver', os.path.join(work, 'cirrus.sys'),
@@ -88,7 +86,7 @@ def main():
             print(f'  {line.strip()}')
 
     print(f'\n{a.out} is ready.')
-    print('Do not redistribute it: five of its files are Microsoft\'s, three of them modified.')
+    print('Do not redistribute it: four of its files are Microsoft\'s, three of them modified.')
 
 
 if __name__ == '__main__':

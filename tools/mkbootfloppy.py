@@ -11,10 +11,14 @@ so the user's Windows NT CD can be used exactly as it was pressed.
                           contiguous: Open Firmware reads it with `read-blocks` off the raw
                           device long before anything can parse a filesystem, and a contiguous
                           extent at a known block is the only thing that makes that possible.
-  * `\\PPC\\SETUPLDR`     NT's text-mode Setup loader, copied from the user's own CD.
+  * `\\PPC\\VENEERD.EXE`  the same, patched for booting the installed disk instead (`--for disk`).
   * `\\HALSHINR.DLL`     this project's HAL, in the **root**, because that is where a
                           `[Disks]` line's directory field points Setup.
-  * `\\I8042PRT.SYS`     the ADB keyboard driver that stands in for the one NT expects.
+  * `\\ADBPORT.SYS`      this project's ADB keyboard/mouse driver, which also serves this disk's
+                          image to Setup from RAM as `\\Device\\Floppy0`.
+  * `\\CIRRUS.SYS`, `\\CIRRUS.DLL`  the display pair off the user's CD, the miniport with
+                          ledger row 6 applied (`--vga-aperture`).
+  * `\\SETUP.OF`, `\\BOOT.OF`, `\\BOOTDISK.OF`  the three Open Firmware scripts.
   * `\\TXTSETUP.OEM`     the OEM description that offers the HAL as a computer type (C2), and
                           -- with `--display-driver` -- a display type as well, which is how
                           ledger row 6 reaches a boot that applies no pokes.
@@ -23,11 +27,13 @@ Nothing from Microsoft is stored in this repository: every file above is named o
 line and comes from the user's own media.  The tool writes an image; it ships no content.
 
     mkbootfloppy.py --out tmp/boot.img \\
-        --veneer <PPC/VENEER.EXE> --setupldr <PPC/SETUPLDR> \\
-        --hal build/hal.dll --kbd <i8042prt replacement>
+        --veneer <veneer-fd.exe> --disk-veneer <veneer-disk.exe> --hal build/hal.dll \\
+        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
 
-It prints the veneer's start block and length in blocks, which is what
-`mkcoldboot.py --veneer-dev /bandit/gc/swim3 --veneer-block N --veneer-blocks M` needs.
+`mkfloppy.py` (and `make floppy ISO=<cd>`) runs this with the files it took off the CD.  SETUPLDR
+is **not** on the disk: the veneer loads it from the CD, which is the boot device.  `--setupldr`
+puts a copy at `\\PPC\\SETUPLDR` only for the boot-*from*-the-floppy arrangement of the plan's
+section 2.2, a dead end that is kept for section 7.
 """
 import argparse, os, re, struct, sys
 
@@ -554,7 +560,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
     ap.add_argument('--veneer', required=True, help='VENEER.EXE, already patched by mkveneer.py')
-    ap.add_argument('--setupldr', required=True, help="PPC/SETUPLDR from the user's CD")
+    ap.add_argument('--setupldr', help="the CD's PPC/SETUPLDR, placed at \\PPC\\SETUPLDR. Only "
+                                       'needed to boot *from* the floppy (the plan\'s section 2.2); '
+                                       'the OEM-disk arrangement of 2.1 loads it from the CD')
     ap.add_argument('--hal', required=True, help='build/hal.dll — installed as HALSHINR.DLL')
     ap.add_argument('--adb-driver', metavar='PATH',
                     help='the ADB keyboard/mouse/OEM-disk driver, installed as ADBPORT.SYS and '
@@ -635,8 +643,9 @@ def main():
         dcluster, dlba = fs.alloc(dveneer)          # second, so contiguous as well
         dblocks = (len(dveneer) + SECTOR - 1) // SECTOR
 
-    # `\\PPC` mirrors the CD, because the veneer's boot-file path is `\\PPC\\SETUPLDR` and it
-    # resolves that on whatever device it booted from.  The OEM files go in the **root**: a
+    # `\\PPC` holds the veneers, and mirrors the CD's layout so that a boot *from* this disk
+    # (`--setupldr`, `--sif`) finds `\\PPC\\SETUPLDR` where the veneer's boot-file path says.
+    # The OEM files go in the **root**: a
     # `[Disks]` line's third field is the directory Setup prefixes to every filename it reads
     # from the disk, and Setup asked for `\\halshinr.dll` when that field was `\\`.
     ppc = [fs.dirent('VENEER.EXE', vcluster, len(veneer))]
@@ -651,7 +660,8 @@ def main():
                               ('CIRRUS.DLL', a.display_dll, root),
                               ('ADBPORT.SYS', adb_driver, root)):
         if path is None:
-            print(f'  ({name} omitted -- no path given)')
+            if name not in ('SETUPLDR', 'TXTSETUP.SIF', 'I8042PRT.SYS'):   # the 2.2 extras
+                print(f'  ({name} omitted -- no path given)')
             continue
         data = read(path)
         if name == 'CIRRUS.SYS' and a.vga_aperture is not None:
@@ -716,8 +726,7 @@ def main():
     print(f'{a.out}: {len(img)} bytes, FAT12, {used}/{fs.clusters} clusters used')
     print(f'  \\PPC\\VENEER.EXE   {len(veneer)} bytes at block {vlba} ({vlba:#x}), '
           f'{vblocks} blocks ({vblocks:#x}) — contiguous')
-    print(f'  read it with:  mkcoldboot.py --veneer-dev /bandit/gc/swim3 '
-          f'--veneer-block {vlba:#x} --veneer-blocks {vblocks:#x}')
+    print(f'  \\BOOT.OF reads it with read-blocks from block {vlba:#x}, {vblocks:#x} blocks')
     if dveneer is not None:
         print(f'  \\PPC\\VENEERD.EXE  {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
               f'{dblocks} blocks ({dblocks:#x}) — contiguous, for \\BOOTDISK.OF')

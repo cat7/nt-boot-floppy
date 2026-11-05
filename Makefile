@@ -83,11 +83,12 @@ disasm: $(BUILD)/hal.elf
 #
 #     make floppy ISO=/path/to/nt4-ppc.iso
 #
-# Builds the HAL and the ADB driver first, then takes the four files it cannot
-# ship -- the veneer, SETUPLDR and the Cirrus driver pair -- off the image you
-# name, patches the veneer twice, and lays out build/boot-floppy.img.
+# Builds the HAL and the ADB driver first, then takes the three files it cannot
+# ship -- the veneer and the Cirrus driver pair -- off the image you name,
+# patches the veneer twice and the miniport once, and lays out
+# build/boot-floppy.img.  (SETUPLDR stays on the CD, where the veneer loads it.)
 #
-# The result CANNOT BE REDISTRIBUTED: five of its eleven files are Microsoft's
+# The result CANNOT BE REDISTRIBUTED: four of its ten files are Microsoft's
 # and three of those are modified.  See PROVENANCE.md.
 floppy: all
 	@test -n "$(ISO)" || { \

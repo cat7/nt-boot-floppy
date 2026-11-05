@@ -168,10 +168,10 @@ firmware of its own, so [`tools/mkarcdisk.py`](tools/mkarcdisk.py) does that job
 the **second** partition — the first exists to hold `OSLOADER.EXE` and `HAL.DLL` where the
 firmware can read them.
 
-The floppy build is the whole of the rest: it compiles the HAL and the ADB driver, takes the four
-files it cannot ship off the image you named — the ARC veneer, `SETUPLDR`, and the Cirrus driver pair,
-decompressing the cabinet the CD stores one of them in — patches the veneer twice, and lays out
-the floppy.
+The floppy build is the whole of the rest: it compiles the HAL and the ADB driver, takes the three
+files it cannot ship off the image you named — the ARC veneer and the Cirrus driver pair,
+decompressing the cabinet the CD stores one of them in — patches the veneer twice and the
+miniport once, and lays out the floppy.
 
 Then, with the emulator (below), at the Open Firmware `0 >` prompt:
 
@@ -194,7 +194,7 @@ find a keyboard"* several screens later), and leaving the file system as FAT.
 
 > ### The floppy image cannot be redistributed
 >
-> Five of its eleven files are Microsoft's, off your CD, and three of those are modified. Nothing
+> Four of its ten files are Microsoft's, off your CD, and three of those are modified. Nothing
 > of theirs is stored in this repository — every one is read from the image you name on the
 > command line, which is why `make floppy` needs one. The two files that *are* ours,
 > `HALSHINR.DLL` and `ADBPORT.SYS`, are GPL-2.0-only and may be distributed with their source.
