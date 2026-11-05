@@ -7,8 +7,7 @@
  * 1275 PowerPC client-interface binding in force: 5 is the client-interface handler, 1 a
  * stack Open Firmware lent us, and the MMU on with Open Firmware's translations (real-mode?
  * false; load-base and real-base are what setup.of put in NVRAM).  Microsoft's veneer saves 5
- * and calls its main; so does this.  The stack is ours (bss), so nothing of Open Firmware's is
- * written below its own frames. */
+ * and calls its main on the stack it was given; so does this. */
 	.section .text.start,"ax",@progbits
 	.globl _start
 _start:
@@ -27,11 +26,9 @@ _start:
 	stw	0, 0(11)
 	addi	11, 11, 4
 	b	1b
-2:	lis	1, arcfw_stack_top@ha
-	addi	1, 1, arcfw_stack_top@l
-	addi	1, 1, -64
-	li	0, 0
-	stw	0, 0(1)
+2:	/* Open Firmware's stack, as the veneer uses it (and NT's loader after it): the image
+	 * carries no stack of its own, so there is nothing to read off the floppy for one. */
+	stwu	1, -64(1)
 	bl	arcfw_main
 	/* main returned: back to Open Firmware */
 	b	of_exit
@@ -76,8 +73,3 @@ arcfw_enter:
 of_cif:		.long 0
 of_entry_r1:	.long 0
 
-	.section .bss
-	.globl arcfw_stack_top
-	.balign 16
-arcfw_stack:	.space 65536
-arcfw_stack_top:
