@@ -371,7 +371,9 @@ VOID config_node_path(PARC_NODE n, CHAR *buf, ULONG len)
 VOID config_dump(PARC_NODE n, ULONG depth)
 {
     for (; n; n = n->Peer) {
-        con_printf("arcfw: %*s%u/%u key %u flags %x '%s' cfg %u%s%s\n", depth * 2, "", n->Component.Class, n->Component.Type,
+        con_printf("arcfw: ");
+        for (ULONG i = 0; i < depth; i++) con_puts("  ");
+        con_printf("%u/%u key %u flags %x '%s' cfg %u%s%s\n", n->Component.Class, n->Component.Type,
                    n->Component.Key, n->Component.Flags, n->Component.Identifier ? n->Component.Identifier : "",
                    n->Component.ConfigurationDataLength, n->OfPath ? " " : "", n->OfPath ? n->OfPath : "");
         if (n->Child) config_dump(n->Child, depth + 1);
