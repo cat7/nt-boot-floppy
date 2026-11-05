@@ -16,8 +16,8 @@ source with `clang` and `lld`; there is no Microsoft tool, header or DDK in the 
 ![The Windows NT 4.0 desktop, running on the Apple Network Server](traces/2026-09-14-gui-04-desktop.png)
 
 **What works.** From a cold machine and a **stock, unmodified** NT 4.0 Workstation CD, text-mode
-and GUI Setup complete, and the installed system cold-boots to its logon screen and takes
-Ctrl+Alt+Del from the ADB keyboard. Both Symbios 53C825A SCSI controllers, the Cirrus 54M30 at
+and GUI Setup complete, and the installed system cold-boots through this project's own ARC
+firmware to its logon screen and takes Ctrl+Alt+Del from the ADB keyboard. Both Symbios 53C825A SCSI controllers, the Cirrus 54M30 at
 640×480×256 through NT's own display driver and the chip's BitBLT engine, the ADB keyboard and
 mouse through Cuda, the real-time clock, and NT's restart all work. The emulator project's
 integration tests do the whole install unattended.
@@ -36,7 +36,7 @@ ROM**, a **Windows NT 4.0 Workstation for PowerPC CD image** with its Product ID
 [Granny Smith](https://github.com/pappadf/granny-smith) emulator.
 
 ```bash
-make                                       # -> build/hal.dll, build/adbport.sys
+make                                       # -> build/hal.dll, build/adbport.sys, build/arcfw.exe
 make floppy ISO=/path/to/nt4-ppc.iso       # -> build/boot-floppy.img
 make disk                                  # -> build/nt-disk.img
 ```

@@ -34,7 +34,8 @@ ARC *system partition*, 32 MB of FAT at the front, which on a real ARC machine `
 would create. Install to the **second** partition; the first is where the firmware reads
 `OSLOADER.EXE` and `HAL.DLL` from.
 
-Rebuild the floppy whenever you rebuild the HAL. The copy on the floppy is the one Setup loads.
+Rebuild the floppy whenever you rebuild the HAL, the ADB driver or the ARC firmware: the copies
+on the floppy are the ones Setup and the disk boot load.
 
 ## 2. Configure the machine
 
@@ -142,7 +143,28 @@ firmware at the disk. `Arcfw 0.1` reports what it found (it asks only SCSI targe
 targets the boot variables name; `setenv ARCFW-SCSI-TARGETS all` at the prompt makes it scan
 every id, at a selection timeout for each absent one), OSLOADER's menu shows *Windows NT
 Workstation Version 4.00*, the kernel loads, the HAL comes up, and after `autochk` the Setup
-wizard is drawn. Every page takes Enter on its default button except the three marked.
+wizard is drawn:
+
+```
+Loading PE/COFF image_base 50000
+powermac-nt-hal: starting the installed Windows NT
+
+Arcfw 0.1: ARC firmware for the Apple Network Server (powermac-nt-hal)
+arcfw: system parameter block at 4000, 37 vector entries
+arcfw: KSEG0 mapped, 800000 bytes
+arcfw: configuration tree built
+arcfw: booting 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)\os\winnt40\osloader.exe'
+arcfw: loaded at 80600000..8064a800, entry descriptor 80643d38
+arcfw: starting the loader
+OS Loader V4.00
+```
+
+`setenv ARCFW-DEBUG 7fff` at the `0 >` prompt before the `load` makes the firmware trace every
+ARC call NT's loader makes (the tree it hands over, the memory descriptors, every `Open`, `Read`
+and `GetEnvironmentVariable`) on the serial console; `setenv ARCFW-DEBUG 0` turns it off again.
+The value is kept in NVRAM.
+
+Every page takes Enter on its default button except the three marked.
 
 | Page | Press |
 |---|---|
@@ -190,7 +212,10 @@ python3 tools/fatput.py nt-installed.img 1 '\OS\WINNT40\HAL.DLL' build/hal.dll
 |---|---|
 | `load fd:\boot.of` says `PARTITION is not a number` | the comma: `fd:,\boot.of` |
 | `eval` reports an unknown word printed as blanks | 32 MB of RAM; the machine needs 64 |
-| `VrOpen returned 8` after the veneer starts | the CD is not at id 0 on the first controller, or the disk not at id 0 on the second |
+| `VrOpen returned 8` after the veneer starts | the CD is not at id 0 on the first controller (the install boot) |
+| `arcfw: fatal: cannot load 'multi(0)scsi(1)disk(0)...osloader.exe'` | the disk is not at id 0 on the second controller, or its system partition has no `\OS\WINNT40\OSLOADER.EXE` yet (text-mode Setup has not completed) |
+| `arcfw: fatal: no OSLOADER in the environment` | `bootdisk.of` was not what ran; it sets the ARC variables on `/options` before starting the firmware |
+| `arcfw` prints its banner and nothing after `starting the loader` | `setenv ARCFW-DEBUG 7fff`, boot again, and read the trace |
 | *Setup did not find a keyboard connected to your computer* | the ADB driver was not added at the mass-storage screen (**S**, Other). Start over |
 | *The Product Id you entered is not valid* | the digits were typed into one box; Tab between the three |
 | GUI Setup shows a backdrop and one grey *Back* button | a HAL older than 17 September on the system partition; see section 6 |
