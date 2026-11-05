@@ -187,27 +187,85 @@ ARC_STATUS io_get_file_information(ULONG fd, PFILE_INFORMATION fi)
     return ESUCCESS;
 }
 
-/* The whole of a file at once, through the instance's `load` method -- what Open Firmware's own
- * `load` command does.  Its iso-9660-files package answers -1 to read and seek (measured 5
- * November on \\PPC\\SETUPLDR), and `load` is the one way it gives a file up.  The buffer is a
- * megabyte claimed at 48 MB, below the floppy's staging areas and above anything NT's loaders
- * link at; it stays claimed, which the memory descriptors report as firmware-temporary. */
-#define WHOLE_PHYS 0x03000000u
-#define WHOLE_SIZE 0x00100000u
-static BOOLEAN whole_claimed;
-ARC_STATUS io_load_whole(ULONG fd, PVOID *buf, PULONG size)
+/* A file on a CD, found by this firmware itself: ISO 9660 read through the raw device, which
+ * Open Firmware's SCSI package reads and seeks at byte offsets (SETUPLDR reads the CD that way
+ * too, E3).  Its iso-9660-files package opened \\PPC\\SETUPLDR and then answered -1 to read and
+ * seek, and its load method threw (measured 5 November), so the package is not used.  The
+ * primary volume descriptor is at sector 16; a directory record is: length, ext-attr length,
+ * extent LBA (both-endian, 8 bytes), size (both-endian, 8 bytes), 7 bytes of date, flags, unit
+ * size, gap, volume sequence (4), name length, name; names are upper case with a ";1" version. */
+#define ISO_SECTOR 2048
+static ULONG iso_le32(const UCHAR *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((ULONG)p[3] << 24); }
+
+static ARC_STATUS iso_read_sector(ULONG fd, ULONG lba, UCHAR *buf)
 {
-    if (fd >= MAX_FD || !fds[fd].open || !fds[fd].is_file) return EBADF;
-    if (!whole_claimed) {
-        if (of_claim_real(WHOLE_PHYS, WHOLE_SIZE) < 0) return ENOMEM;
-        whole_claimed = TRUE;
+    LARGE_INTEGER li; li.HighPart = 0; li.LowPart = lba * ISO_SECTOR;
+    ULONG got;
+    if (io_seek(fd, &li, SeekAbsolute) != ESUCCESS) return EIO;
+    if (io_read(fd, buf, ISO_SECTOR, &got) != ESUCCESS || got != ISO_SECTOR) return EIO;
+    return ESUCCESS;
+}
+
+static BOOLEAN iso_name_is(const UCHAR *name, ULONG len, const CHAR *want)
+{
+    ULONG i = 0;
+    for (; i < len && want[i]; i++) if (toupper(name[i]) != toupper(want[i])) return FALSE;
+    if (want[i]) return FALSE;
+    return i == len || (name[i] == ';') || (name[i] == '.' && i + 1 < len && name[i + 1] == ';') || (name[i] == '.' && i + 1 == len);
+}
+
+/* look `want` (one path component) up in the directory whose extent is lba/size */
+static ARC_STATUS iso_lookup(ULONG fd, ULONG lba, ULONG size, const CHAR *want, PULONG out_lba, PULONG out_size, BOOLEAN *is_dir)
+{
+    static UCHAR sec[ISO_SECTOR] __attribute__((aligned(16)));
+    for (ULONG off = 0; off < size; off += ISO_SECTOR) {
+        if (iso_read_sector(fd, lba + off / ISO_SECTOR, sec) != ESUCCESS) return EIO;
+        ULONG at = 0;
+        while (at + 33 <= ISO_SECTOR) {
+            ULONG len = sec[at];
+            if (len == 0) break;                         /* the rest of the sector is padding */
+            ULONG nlen = sec[at + 32];
+            if (nlen > 1 && iso_name_is(sec + at + 33, nlen, want)) {
+                *out_lba = iso_le32(sec + at + 2); *out_size = iso_le32(sec + at + 10);
+                *is_dir = (sec[at + 25] & 2) != 0;
+                return ESUCCESS;
+            }
+            at += len;
+        }
     }
-    ULONG in[1] = { WHOLE_PHYS }, out[1];
-    if (of_call_method("load", fds[fd].ih, 1, 1, in, out) || out[0] == 0 || out[0] > WHOLE_SIZE) {
-        DBG(DBG_IO, "arcfw: load of fd %u through the instance's load method failed\n", fd);
-        return EIO;
+    return ENOENT;
+}
+
+/* Open the device an ARC path names, raw, and find the file after it: the fd, the file's byte
+ * offset on the device and its size.  The ARC path's file part uses backslashes. */
+ARC_STATUS io_open_iso_file(const CHAR *arcpath, PULONG fd, PULONG offset, PULONG size)
+{
+    CHAR dev[160]; ULONG i = 0;
+    const CHAR *file = arcpath;
+    while (*file && *file != '\\') file++;
+    for (; i + 1 < sizeof dev && arcpath + i < file; i++) dev[i] = arcpath[i];
+    dev[i] = 0;
+    if (!*file) return ENOENT;
+    ARC_STATUS s = io_open(dev, ArcOpenReadOnly, fd);
+    if (s != ESUCCESS) return s;
+    static UCHAR pvd[ISO_SECTOR] __attribute__((aligned(16)));
+    if (iso_read_sector(*fd, 16, pvd) != ESUCCESS || memcmp(pvd + 1, "CD001", 5) != 0) { io_close(*fd); return EIO; }
+    ULONG lba = iso_le32(pvd + 156 + 2), sz = iso_le32(pvd + 156 + 10); BOOLEAN dir = TRUE;
+    const CHAR *p = file;
+    while (*p) {
+        while (*p == '\\') p++;
+        if (!*p) break;
+        CHAR part[64]; ULONG n = 0;
+        while (*p && *p != '\\' && n + 1 < sizeof part) part[n++] = *p++;
+        part[n] = 0;
+        if (!dir) { io_close(*fd); return ENOTDIR; }
+        if (iso_lookup(*fd, lba, sz, part, &lba, &sz, &dir) != ESUCCESS) {
+            DBG(DBG_IO, "arcfw: '%s' not on the CD\n", part);
+            io_close(*fd); return ENOENT;
+        }
     }
-    DBG(DBG_IO, "arcfw: fd %u loaded whole: %u bytes at %08x\n", fd, out[0], WHOLE_PHYS);
-    *buf = (PVOID)WHOLE_PHYS; *size = out[0];
+    if (dir) { io_close(*fd); return EISDIR; }
+    *offset = lba * ISO_SECTOR; *size = sz;
+    DBG(DBG_IO, "arcfw: '%s' on the CD: lba %u, %u bytes\n", file, lba, sz);
     return ESUCCESS;
 }

@@ -22,3 +22,9 @@ ULONG atoul(const CHAR *s, const CHAR **end)
     if (end) *end = s;
     return v;
 }
+const CHAR *strstr_ci(const CHAR *hay, const CHAR *needle)
+{
+    ULONG n = strlen(needle);
+    for (; *hay; hay++) if (strncasecmp(hay, needle, n) == 0) return hay;
+    return NULL;
+}

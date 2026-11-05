@@ -182,6 +182,7 @@ LONG strcmp(const CHAR *a, const CHAR *b);
 LONG strncmp(const CHAR *a, const CHAR *b, ULONG n);
 LONG strcasecmp(const CHAR *a, const CHAR *b);
 LONG strncasecmp(const CHAR *a, const CHAR *b, ULONG n);
+const CHAR *strstr_ci(const CHAR *hay, const CHAR *needle);
 CHAR *strcpy(CHAR *d, const CHAR *s);
 CHAR *strcat(CHAR *d, const CHAR *s);
 CHAR *strchr(const CHAR *s, CHAR c);
@@ -234,7 +235,7 @@ ARC_STATUS io_close(ULONG fd);
 ARC_STATUS io_read(ULONG fd, PVOID buf, ULONG n, PULONG count);
 ARC_STATUS io_write(ULONG fd, const VOID *buf, ULONG n, PULONG count);
 ARC_STATUS io_seek(ULONG fd, LARGE_INTEGER *off, SEEK_MODE mode);
-ARC_STATUS io_load_whole(ULONG fd, PVOID *buf, PULONG size);   /* the file through its load method */
+ARC_STATUS io_open_iso_file(const CHAR *arcpath, PULONG fd, PULONG offset, PULONG size);   /* a CD file, raw */
 ARC_STATUS io_get_read_status(ULONG fd);
 ARC_STATUS io_get_file_information(ULONG fd, PFILE_INFORMATION fi);
 
