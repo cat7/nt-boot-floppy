@@ -512,7 +512,9 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
           # the same low page boot.of maps, for the same reason (ledger row 1)
           f'   4000 1000 " map-space" nt-pe $call-method']
     pad = (-loader_size) % 0x1000
-    if pad:
+    # arcfw claims the loader's pages whole itself, and its memory descriptors are built from
+    # page-rounded claims; the sliver would only collide with that claim (5 November).
+    if pad and firmware != 'ARCFW.EXE':
         end = (loader_base & 0x7FFFFFFF) + loader_size
         L += ['   \\ the loader is not a whole number of pages; claim the rest of its last page (E24)',
               f'   {end:X} {pad:X} " map-space" nt-pe $call-method']
