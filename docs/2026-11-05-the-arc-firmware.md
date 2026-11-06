@@ -235,3 +235,57 @@ COFF with 599 function symbols (`..BlPpcMemoryInitialize`, `..AllocateKseg0Block
 `..RtlZeroMemory` and the rest name every fault at once); granny-smith's headless shell for the
 breakpoints, which must be **logical** addresses for code under KSEG0 -- a physical breakpoint
 on OSLOADER or the kernel never fires.
+
+## 7. The production ROM
+
+Everything above ran on the 2.26NT ROM, the Open Firmware Apple built for NT, because the
+veneer needed two things only it had: a machine already running little-endian, and `pe-loader`.
+A MacRumors post (the Power Macintosh 9500: "only the `little-endian?` nvram variable is used to
+determine if Open Firmware should switch to little-endian mode") was the hint that the first is
+not special to the NT ROM at all, and on 6 November the production 1.1.22 ROM was tried. What it
+took, in the order it was met:
+
+1. **Little-endian is a configuration variable.** `setenv little-endian? true`, `real-mode?
+   false`, `real-base 3F00000`, `load-base 3E00000`, `reset-all`: the 1.1.22 ROM comes back at
+   `0 >` with the 604 in little-endian mode (MSR `0x1B071`), its own code relocated to
+   `0xFF8xxxxx`. `setup.of` on the floppy types exactly this and is the same on both ROMs.
+2. **No `pe-loader`, so an XCOFF.** The 1.1.22 ROM has `xcoff-loader`; `elf2pe.py --xcoff`
+   writes the firmware as one `.text` section at its link address and a `.bss`, with an 8-byte
+   `{entry, 0}` descriptor appended to `.text` and the a.out `entry` pointing at it, because the
+   loader treats the entry as a function descriptor. In little-endian mode the loader reads the
+   XCOFF headers little-endian too (`bad f_magic` otherwise), so the headers are written that
+   way; `--xcoff-be` keeps the big-endian form for a big-endian machine.
+3. **`map-space` was `pe-loader`'s.** The scripts' claims and maps go through `/chosen`'s
+   `memory` and `mmu` instances instead (`" claim" nt-mem $call-method`, `" map" nt-mmu
+   $call-method`), as a client program would make them. A `claim` of the page the firmware
+   itself holds (the system parameter block's, `0x4000`) fails and is caught; the map still goes
+   through.
+4. **`map` mode -1 maps nothing writable on this ROM.** The veneer's `-2` for KSEG0 and `-1` for
+   its claims were accepted silently and the first store faulted (`DSI` at `0x4007`, then
+   `0x5007`); mode 0 (cacheable RAM) stores. The heap, which the client interface's `claim`
+   hands back unmapped here, is mapped explicitly for the same reason.
+5. **`fat-files` stops one directory down.** `dir sd@0,0:1,\OS\` lists `WINNT40`; `dir
+   sd@0,0:1,\OS\WINNT40\` is `can't OPEN the DIR device`, and `open-dev` of the loader answers
+   0. So, as for the CD, the firmware walks the filesystem itself (`fat.c`: the MBR for the
+   partition, the BPB, FAT12/16/32, 8.3 names, contiguous clusters merged into one read) over the
+   disk opened whole.
+6. **The `:N` instances open and do not read.** OSLOADER opens `partition(1)`, `partition(2)`
+   and `partition(0)` raw: to type the volumes, to read the kernel with its own FAT code, and to
+   checksum sector 0 for the ARC disk names. `sd@0,0:1` answered 0 bytes to every read and
+   `sd@0,0:0` answered -1; the first left the loader printing its page counts, the second ended
+   in `STOP 0x7B INACCESSIBLE_BOOT_DEVICE` once the kernel had no disk signature to match. Raw
+   opens go through the same code as files now: the bare node path or `:0`, whichever reads
+   sector 0, plus the partition's offset from the MBR.
+7. **`setenv` takes only known names.** `ARCFW-DEBUG` is set as a property on `/options` there.
+
+With these the installed Windows NT cold-boots on the production ROM to the logon screen and
+Administrator logs on from the ADB keyboard, the same goldens as on the 2.26NT ROM, in 6.9 G
+instructions against 8.3 G there (the 2.26NT ROM's POST is the longer part). The same XCOFF
+floppy boots the 2.26NT ROM too, through its own `xcoff-loader`, so `make floppy` carries
+`ARCFW.XCF` alone and the NT ROM is no longer required for anything.
+
+Tools and probes: `le-prod*.script` in the session's scratch were the `0 >` probes (what
+`dir`, `open-dev` and `map` do on 1.1.22 in little-endian mode); granny-smith's `debug.exceptions`
+ring and a breakpoint on the ROM's alignment vector (`0xFFF00604`, physical: MSR[IP] is set)
+found the register state the client interface came back with.
+

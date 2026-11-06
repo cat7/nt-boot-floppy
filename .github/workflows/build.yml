@@ -34,15 +34,19 @@ jobs:
           test -f build/hal.dll
           test -f build/adbport.sys
           test -f build/arcfw.exe
+          test -f build/arcfw.xcf
           test -f build/boot-floppy.img
           python3 tools/pe-exports.py build/adbport.sys | grep -q '01f0\|0x1f0'
           # arcfw.exe is a raw COFF: machine 0x01F0 in its first two bytes
           test "$(head -c 2 build/arcfw.exe | od -An -tx1 | tr -d ' ')" = f001
+          # arcfw.xcf is an XCOFF with little-endian headers: f_magic 0x01DF, what the ROM's
+          # xcoff-loader reads once the machine runs little-endian
+          test "$(head -c 2 build/arcfw.xcf | od -An -tx1 | tr -d ' ')" = df01
           # the floppy carries nothing of Microsoft's: no such 8.3 directory entry on it
           for e in 'VENEER  EXE' 'VENEERD EXE' 'SETUPLDR   ' 'CIRRUS  SYS' 'CIRRUS  DLL' 'I8042PRTSYS'; do
             ! grep -aq "$e" build/boot-floppy.img || { echo "$e is on the floppy"; exit 1; }
           done
-          for e in 'ARCFW   EXE' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
+          for e in 'ARCFW   XCF' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
             grep -aq "$e" build/boot-floppy.img || { echo "$e is missing from the floppy"; exit 1; }
           done
           # A PowerPC (little-endian) PE that NT's loader will accept: machine 0x01F0.
@@ -77,12 +81,14 @@ jobs:
         run: |
           cp build/hal.dll /tmp/hal-first.dll
           cp build/arcfw.exe /tmp/arcfw-first.exe
+          cp build/arcfw.xcf /tmp/arcfw-first.xcf
           cp build/boot-floppy.img /tmp/floppy-first.img
           make clean
           make
           make floppy
           cmp /tmp/hal-first.dll build/hal.dll
           cmp /tmp/arcfw-first.exe build/arcfw.exe
+          cmp /tmp/arcfw-first.xcf build/arcfw.xcf
           cmp /tmp/floppy-first.img build/boot-floppy.img
 
       - uses: actions/upload-artifact@v4
@@ -93,4 +99,5 @@ jobs:
             build/hal.dll
             build/adbport.sys
             build/arcfw.exe
+            build/arcfw.xcf
           if-no-files-found: error

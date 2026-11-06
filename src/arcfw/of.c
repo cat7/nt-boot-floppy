@@ -157,7 +157,7 @@ LONG of_map(ULONG phys, ULONG virt, ULONG size, LONG mode)
 LONG of_claim_real(ULONG addr, ULONG size)
 {
     if (of_claim_phys(addr & 0x7FFFFFFFu, size, 0) == (PVOID)OF_NONE) return -1;
-    return of_map(addr & 0x7FFFFFFFu, addr, size, -1);
+    return of_map(addr & 0x7FFFFFFFu, addr, size, 0);            /* mode 0, see main.c */
 }
 
 /* Integer properties are stored big-endian in the device tree, whatever mode the processor

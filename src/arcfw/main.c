@@ -39,7 +39,12 @@ VOID arcfw_main(VOID)
     con_printf("arcfw: system parameter block at %x, %u vector entries\n", ARC_SPB_PHYS, FIRMWARE_VECTOR_ENTRIES);
 
     /* 2. KSEG0: 8 MB of physical memory at 0x80000000, where NT's loaders live and look */
-    if (of_map(0, ARC_KSEG0, ARC_KSEG0_SIZE, -2) != 0) fatal("cannot map KSEG0");
+    /* mode 0: cacheable read/write RAM.  The veneer passed -2 here and -1 for its claims; the
+     * 2.26NT ROM took both, the stock 1.1.22 ROM takes the call, says nothing, and maps nothing
+     * writable (a probe of 6 November: a page mapped with -1 reads and faults on the first
+     * store; with 0 or 2 it stores).  maciNTosh-bandit's loader, on the same firmware family,
+     * uses 0 for RAM and 0x2A for device space. */
+    if (of_map(0, ARC_KSEG0, ARC_KSEG0_SIZE, 0) != 0) fatal("cannot map KSEG0");
     con_printf("arcfw: KSEG0 mapped, %x bytes\n", ARC_KSEG0_SIZE);
 
     /* 3. the configuration tree */

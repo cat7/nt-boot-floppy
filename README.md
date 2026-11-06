@@ -33,13 +33,14 @@ participate. Real hardware: nothing has been tried outside the emulator.
 
 ## Using it
 
-Three ingredients, none of which can ship here: the Network Server's **Open Firmware 2.26NT
-ROM**, a **Windows NT 4.0 Workstation for PowerPC CD image** with its Product ID, and the
+Three ingredients, none of which can ship here: a **Network Server ROM** (the production
+1.1.22 ROM every machine shipped with, or the 2.26NT one Apple built for NT; since 6 November
+2026 either works), a **Windows NT 4.0 Workstation for PowerPC CD image** with its Product ID, and the
 [Granny Smith](https://github.com/pappadf/granny-smith) emulator. The floppy itself needs none of
 them: build it, or take it from a release.
 
 ```bash
-make                                       # -> build/hal.dll, build/adbport.sys, build/arcfw.exe
+make                                       # -> build/hal.dll, build/adbport.sys, build/arcfw.xcf (and arcfw.exe)
 make floppy                                # -> build/boot-floppy.img
 make disk                                  # -> build/nt-disk.img
 ```
@@ -68,7 +69,7 @@ are byte-identical.
 ### How it fits together
 
 The floppy is **not** the boot device. Open Firmware reads this project's ARC firmware
-(`ARCFW.EXE`) off it as raw blocks; the firmware gives NT's loaders the ARC interface they expect
+(`ARCFW.XCF`) off it as raw blocks and starts it with its own `xcoff-loader`; the firmware gives NT's loaders the ARC interface they expect
 over Open Firmware's client interface, loads SETUPLDR off the CD as pressed (or OSLOADER off the
 installed disk), and no Microsoft code runs before NT's loader. Setup
 then meets the same floppy as an ordinary manufacturer's support disk and takes from it the HAL
@@ -79,7 +80,7 @@ NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
 > ### The floppy image may be redistributed
 >
-> Everything on it is this project's: `ARCFW.EXE`, `HALSHINR.DLL`, `ADBPORT.SYS`, a
+> Everything on it is this project's: `ARCFW.XCF`, `HALSHINR.DLL`, `ADBPORT.SYS`, a
 > `txtsetup.oem` and three Open Firmware scripts, all GPL-2.0-only, all built from this tree by
 > `make floppy` with nothing taken from any CD. SETUPLDR and NT's own drivers stay on your CD,
 > where the firmware and Setup read them. Floppies built before 5 November 2026 carried
@@ -90,8 +91,13 @@ NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
 A tag `v*` runs [`release.yml`](.github/workflows/release.yml): it builds everything, lays out
 the floppy, checks that nothing of Microsoft's is on it and that it rebuilds byte for byte, and
-publishes the image, the three binaries and their checksums as a GitHub Release and on GitHub
+publishes the image, the binaries and their checksums as a GitHub Release and on GitHub
 Pages (with this HOWTO; the repository's Pages source must be set to *GitHub Actions* once).
+Every release keeps its own page for good: `https://pappadf.github.io/powermac-nt-hal/v1.0/`
+stays v1.0's, with that tag's HOWTO and files, after v1.1 or v2.0. The root shows the newest
+release and lists them all, and `download/` keeps every release's versioned files at the
+addresses v1.0 first published them under. Each deployment rebuilds the whole site from the
+Releases and the tags (`tools/mkpages.py`), so nothing depends on an earlier deployment.
 Every push builds the same floppy as a CI artifact ([`build.yml`](.github/workflows/build.yml)).
 
 ## What is here

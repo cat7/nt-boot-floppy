@@ -24,7 +24,7 @@ SRCS_S = $(wildcard src/*.S)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS_C)) $(patsubst src/%.S,$(BUILD)/%.o,$(SRCS_S)) \
        $(BUILD)/imports.o $(BUILD)/exports.o
 
-all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/arcfw.exe
+all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/arcfw.exe $(BUILD)/arcfw.xcf
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -100,6 +100,11 @@ $(BUILD)/arcfw.elf: $(ARCFW_OBJS) $(ARCFW)/arcfw.ld
 
 $(BUILD)/arcfw.exe: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
 	python3 $(TOOLS)/elf2pe.py $< $@ --raw-coff --entry _start --dllname arcfw.exe
+
+# The same firmware as an XCOFF, for the stock ROM's xcoff-loader (Open Firmware 1.1.22 on the
+# Network Server, and a Power Macintosh's): the 2.26NT ROM's pe-loader is then not needed.
+$(BUILD)/arcfw.xcf: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
+	python3 $(TOOLS)/elf2pe.py $< $@ --xcoff --entry _start
 
 # The boot floppy:
 #
