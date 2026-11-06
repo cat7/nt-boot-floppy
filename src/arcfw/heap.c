@@ -21,6 +21,10 @@ PVOID zalloc_aligned(ULONG n, ULONG align)
          * descriptors type it FirmwareTemporary on their own. */
         heap = of_claim(NULL, HEAP_SIZE, 4096);
         if (heap == (PVOID)OF_NONE || heap == NULL) fatal("cannot claim the firmware heap");
+        /* The 2.26NT ROM's claim maps what it hands out; the stock 1.1.22 ROM's does not (the
+         * first store into the heap was a DSI at 0x5007, 6 November), so map it, mode 0.  Where
+         * it is mapped already the call is a no-op or an error, either way ignored. */
+        of_map((ULONG)heap, (ULONG)heap, HEAP_SIZE, 0);
     }
     ULONG at = (heap_used + align - 1) & ~(align - 1);
     if (at + n > HEAP_SIZE) fatal("firmware heap exhausted (%u + %u)", at, n);
