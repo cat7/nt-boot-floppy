@@ -101,23 +101,24 @@ def write_xcoff(elf, alloc, base, a):
     if bss_start < text_end: bss_start = text_end          # a .data/.bss overlap is just zeros
     bss_size = max(0, bss_end - bss_start)
     nscns = 2
+    E = '>' if a.xcoff_be else '<'
     hdr_size = 20 + 72 + 40 * nscns
     text_ptr = hdr_size
     # file header: magic 0x01DF (U802TOCMAGIC), nscns, timdat, symptr, nsyms, opthdr, flags
     # (F_RELFLG 1 | F_EXEC 2 | F_LNNO 4 | F_AR32W 0x200: an executable with no relocations)
-    fh = struct.pack('>HHIIIHH', 0x01DF, nscns, TIMESTAMP, 0, 0, 72, 0x0207)
+    fh = struct.pack(E + 'HHIIIHH', 0x01DF, nscns, TIMESTAMP, 0, 0, 72, 0x0207)
     # a.out header: magic 0x010B, vstamp, tsize, dsize, bsize, entry, text_start, data_start,
     # toc, snentry, sntext, sndata, sntoc, snloader, snbss, algntext, algndata, modtype,
     # cpuflag, cputype, maxstack, maxdata, debugger, then padding to 72
-    ah = struct.pack('>HHIIIIIIIHHHHHHHH2sBBIII', 0x010B, 1, len(img), 0, bss_size, entry, text_start, text_end,
+    ah = struct.pack(E + 'HHIIIIIIIHHHHHHHH2sBBIII', 0x010B, 1, len(img), 0, bss_size, entry, text_start, text_end,
                      0, 1, 1, 0, 0, 0, 2, 2, 2, b'1L', 0, 0, 0, 0, 0)
     ah = ah.ljust(72, b'\0')
     def scn(name, vaddr, size, ptr, flags):
-        return struct.pack('>8sIIIIIIHHI', name.encode().ljust(8, b'\0'), vaddr, vaddr, size, ptr, 0, 0, 0, 0, flags)
+        return struct.pack(E + '8sIIIIIIHHI', name.encode().ljust(8, b'\0'), vaddr, vaddr, size, ptr, 0, 0, 0, 0, flags)
     sh = scn('.text', text_start, len(img), text_ptr, 0x0020) + scn('.bss', bss_start, bss_size, 0, 0x0080)
     out = fh + ah + sh + bytes(img)
     open(a.out, 'wb').write(out)
-    print(f'{a.out}: XCOFF, .text {text_start:#x}+{len(img):#x}, .bss {bss_start:#x}+{bss_size:#x}, entry {entry:#x}')
+    print(f'{a.out}: XCOFF ({"big" if a.xcoff_be else "little"}-endian headers), .text {text_start:#x}+{len(img):#x}, .bss {bss_start:#x}+{bss_size:#x}, entry {entry:#x}')
 
 
 def main():
@@ -137,6 +138,10 @@ def main():
                          'file-backed section as an image of memory from the link base, a .bss for the rest, '
                          "and the entry at the entry symbol's address, as the Linux/BSD boot loaders of the "
                          'era were laid out (hack-coff).  No MZ, no PE, no imports or exports')
+    ap.add_argument('--xcoff-be', action='store_true',
+                    help='XCOFF headers big-endian, as the format prescribes.  The default is little-endian: '
+                         "the Network Server's ROM, booted with little-endian? true, reads the headers with "
+                         'little-endian loads, and answered `bad f_magic` to a big-endian one (5 November)')
     ap.add_argument('--section-align', type=lambda x: int(x, 0), default=0x1000)
     ap.add_argument('--file-align', type=lambda x: int(x, 0), default=0x200)
     a = ap.parse_args()
