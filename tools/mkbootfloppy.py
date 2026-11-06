@@ -372,7 +372,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
             '\\ map the pages at addr at the same address, as pe-loader\'s map-space did.  The claim is',
             '\\ bookkeeping (the memory node\'s available list) and may fail where the firmware holds',
             '\\ the page itself (the system parameter block\'s, 4000): the map still goes through',
-            ': nt-domap ( addr size -- ) over swap -1 " map" nt-mmu $call-method ;',
+            ': nt-domap ( addr size -- ) over swap 0 " map" nt-mmu $call-method ;',
             ': nt-claim ( addr size -- ) 0 " claim" nt-mem [\'] $call-method catch if 2drop 2drop 2drop else drop then ;',
             ': nt-map ( addr size -- ) 2dup nt-claim nt-domap ;',
             ''] if stock else [])
@@ -537,7 +537,7 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
             '\\ map the pages at addr at the same address, as pe-loader\'s map-space did.  The claim is',
             '\\ bookkeeping (the memory node\'s available list) and may fail where the firmware holds',
             '\\ the page itself (the system parameter block\'s, 4000): the map still goes through',
-            ': nt-domap ( addr size -- ) over swap -1 " map" nt-mmu $call-method ;',
+            ': nt-domap ( addr size -- ) over swap 0 " map" nt-mmu $call-method ;',
             ': nt-claim ( addr size -- ) 0 " claim" nt-mem [\'] $call-method catch if 2drop 2drop 2drop else drop then ;',
             ': nt-map ( addr size -- ) 2dup nt-claim nt-domap ;',
             ''] if stock else [])
