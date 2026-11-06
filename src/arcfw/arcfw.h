@@ -240,7 +240,8 @@ ARC_STATUS io_open_iso_file(const CHAR *arcpath, PULONG fd, PULONG offset, PULON
 /* fat.c: a file on a FAT partition, read raw (the ROM's fat-files package stops one directory down) */
 typedef struct {
     ULONG dev;                       /* the whole disk, an Open Firmware instance */
-    ULONG part_lba;                  /* the partition's first sector on the disk */
+    ULONG part_lba, part_secs;       /* the partition's first sector on the disk, and its length */
+    BOOLEAN raw;                     /* the partition itself, not a file on it */
     ULONG bps, spc;                  /* bytes per sector, sectors per cluster */
     ULONG fat_sec, root_sec, root_secs, data_sec, nclus, root_clus;
     UCHAR bits;                      /* 12, 16 or 32 */
@@ -249,6 +250,7 @@ typedef struct {
     ULONG cache_sec; UCHAR cache[512] __attribute__((aligned(16)));
 } FAT_FILE;
 ARC_STATUS fat_open(const CHAR *devpath, ULONG part, const CHAR *file, FAT_FILE *ff);
+ARC_STATUS fat_open_raw(const CHAR *devpath, ULONG part, FAT_FILE *ff);
 ARC_STATUS fat_read(FAT_FILE *ff, ULONG pos, VOID *buf, ULONG n, PULONG got);
 VOID fat_close(FAT_FILE *ff);
 ARC_STATUS io_get_read_status(ULONG fd);

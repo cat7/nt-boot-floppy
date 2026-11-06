@@ -142,20 +142,41 @@ static ARC_STATUS dir_lookup(FAT_FILE *ff, ULONG dir_clus, const CHAR *want, PUL
 static ARC_STATUS find_partition(FAT_FILE *ff, ULONG part)
 {
     UCHAR *s0;
-    ff->part_lba = 0; ff->cache_sec = 0xFFFFFFFF;
+    ff->part_lba = 0; ff->part_secs = 0xFFFFFFFF; ff->cache_sec = 0xFFFFFFFF;
+    /* sector 0 first, whatever the partition: it proves the instance reads.  On the stock
+     * ROM "sd@0,0:0" opens and then answers -1 to every read, the bare node path reads; the
+     * callers try both, and this is where the first is found out. */
     ARC_STATUS s = part_sector(ff, 0, &s0);
     if (s != ESUCCESS) return s;
+    if (part == 0) return ESUCCESS;                                 /* the whole disk */
     if (s0[510] != 0x55 || s0[511] != 0xAA) return ENODEV;
     /* a BPB: a jump, a plausible sector size, and 1, 2 or 4 sectors per cluster */
     BOOLEAN bpb = (s0[0] == 0xEB || s0[0] == 0xE9) && le16(s0 + 11) >= 512 && le16(s0 + 11) <= 4096 && s0[13] && !(s0[13] & (s0[13] - 1));
-    if (bpb) return part <= 1 ? ESUCCESS : ENODEV;
+    if (bpb) { ff->part_secs = le16(s0 + 19) ? le16(s0 + 19) : le32(s0 + 32); return part == 1 ? ESUCCESS : ENODEV; }
     ULONG n = 0;
     for (ULONG i = 0; i < 4; i++) {
         UCHAR *e = s0 + 0x1BE + 16 * i;
         if (e[4] == 0 || e[4] == 0x05 || e[4] == 0x0F) continue;    /* empty, or an extended container */
-        if (++n == part) { ff->part_lba = le32(e + 8); ff->cache_sec = 0xFFFFFFFF; return ESUCCESS; }
+        if (++n == part) { ff->part_lba = le32(e + 8); ff->part_secs = le32(e + 12); ff->cache_sec = 0xFFFFFFFF; return ESUCCESS; }
     }
     return ENODEV;
+}
+
+/* Open the disk `devpath` (an Open Firmware path, whole) as partition `part` raw (0: the
+ * whole disk): reads are byte offsets into the partition.  The loader reads the partition's
+ * first sectors this way to type it; on the stock ROM the ROM's own ":N" instance opens and
+ * answers 0 bytes to every read (stock-boot6, 6 November), so this does not use it. */
+ARC_STATUS fat_open_raw(const CHAR *devpath, ULONG part, FAT_FILE *ff)
+{
+    memset(ff, 0, sizeof *ff);
+    ff->dev = of_open(devpath);
+    if (!ff->dev) return ENODEV;
+    ARC_STATUS s = find_partition(ff, part);
+    if (s != ESUCCESS) { of_close(ff->dev); ff->dev = 0; return s; }
+    ff->raw = TRUE;
+    ff->size = ff->part_secs >= 0x800000 ? 0xFFFFFFFF : ff->part_secs * SECTOR;
+    DBG(DBG_IO, "arcfw: partition %u raw: sector %u, %u sectors\n", part, ff->part_lba, ff->part_secs);
+    return ESUCCESS;
 }
 
 /* Open the disk `devpath` (an Open Firmware path, whole) and find `file` (backslash
@@ -217,11 +238,16 @@ VOID fat_close(FAT_FILE *ff)
 /* read up to n bytes at byte position pos; *got is what was read (short at the end) */
 ARC_STATUS fat_read(FAT_FILE *ff, ULONG pos, VOID *buf, ULONG n, PULONG got)
 {
-    ULONG cbytes = ff->spc * ff->bps;
     UCHAR *out = buf;
     *got = 0;
     if (pos >= ff->size) return ESUCCESS;
     if (n > ff->size - pos) n = ff->size - pos;
+    if (ff->raw) {
+        ARC_STATUS s = dev_read(ff, ff->part_lba, pos, buf, n);
+        if (s == ESUCCESS) *got = n;
+        return s;
+    }
+    ULONG cbytes = ff->spc * ff->bps;
     while (n) {
         ULONG idx = pos / cbytes, off = pos % cbytes;
         if (idx < ff->cur_idx) { ff->cur_idx = 0; ff->cur_clus = ff->first; }

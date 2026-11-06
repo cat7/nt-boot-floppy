@@ -83,7 +83,7 @@ ARC_STATUS io_open(const CHAR *path, OPEN_MODE mode, PULONG fd)
         CHAR dev[160];
         con_snprintf(dev, sizeof dev, "%s:0", devpath);
         s = fat_open(dev, part, file, &f->ff);
-        if (s != ESUCCESS) s = fat_open(devpath, part, file, &f->ff);
+        if (s != ESUCCESS) { DBG(DBG_IO, " (%s: %u)", dev, s); s = fat_open(devpath, part, file, &f->ff); }
         if (s == ESUCCESS) {
             f->fat = TRUE; f->open = TRUE; f->size_lo = f->ff.size;
             *fd = i;
@@ -91,6 +91,21 @@ ARC_STATUS io_open(const CHAR *path, OPEN_MODE mode, PULONG fd)
             return ESUCCESS;
         }
         DBG(DBG_IO, " (no FAT walk: %u)", s);
+    }
+    if (!f->is_file && !f->is_cdrom && !f->console && mode == ArcOpenReadOnly) {
+        /* the disk or a partition, raw: through the whole disk and the MBR, not the ROM's
+         * ":N" instance (fat_open_raw says why) */
+        CHAR dev[160];
+        con_snprintf(dev, sizeof dev, "%s:0", devpath);
+        s = fat_open_raw(dev, part, &f->ff);
+        if (s != ESUCCESS) s = fat_open_raw(devpath, part, &f->ff);
+        if (s == ESUCCESS) {
+            f->fat = TRUE; f->open = TRUE; f->size_lo = f->ff.size;
+            *fd = i;
+            DBG(DBG_IO, " fd %u (raw partition)\n", i);
+            return ESUCCESS;
+        }
+        DBG(DBG_IO, " (no raw partition: %u)", s);
     }
     f->ih = of_open(f->path);
     if (!f->ih) { DBG(DBG_IO, " (open failed)\n"); return ENOENT; }
