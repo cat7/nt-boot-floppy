@@ -117,7 +117,9 @@ jobs:
           } > notes.md
       # A tag pushed with git has no release yet: create one.  A tag made on the Releases page
       # ("Draft a new release", "Create new tag on publish") arrives with its release already
-      # there: fill that one in, replacing any asset of the same name.
+      # there: fill that one in, replacing any asset of the same name.  What a person wrote
+      # there stays: the title and the notes are set only where they were left empty (v1.1's
+      # hand-written notes were replaced by the generated ones before this).
       - name: Create or fill the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -125,7 +127,10 @@ jobs:
           v="${{ needs.build.outputs.version }}"
           if gh release view "$v" >/dev/null 2>&1; then
             gh release upload "$v" dist/* --clobber
-            gh release edit "$v" --title "powermac-nt-hal $v" --notes-file notes.md
+            title="$(gh release view "$v" --json name --jq .name)"
+            body="$(gh release view "$v" --json body --jq .body)"
+            if [ -z "$title" ]; then gh release edit "$v" --title "powermac-nt-hal $v"; fi
+            if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then gh release edit "$v" --notes-file notes.md; fi
           else
             gh release create "$v" dist/* --title "powermac-nt-hal $v" --notes-file notes.md
           fi
