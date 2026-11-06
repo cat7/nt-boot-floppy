@@ -96,12 +96,19 @@ def write_xcoff(elf, alloc, base, a):
     for s in filebacked:
         o = s['addr'] - text_start
         img[o:o + s['size']] = elf.d[s['offset']:s['offset'] + s['size']]
+    # The entry is a function descriptor, {code, toc}, not the code: Open Firmware's xcoff-loader
+    # jumps through its first word (measured 6 November: an entry at _start took the first
+    # instruction, 0x3D600005, for an address).  Eight bytes after the text hold it, in the
+    # byte order the loader reads with.
+    E = '>' if a.xcoff_be else '<'
+    img += struct.pack(E + 'II', entry, 0)
+    desc = text_start + len(img) - 8
     bss_start = min((s['addr'] for s in nobits), default=text_end)
     bss_end = max((s['addr'] + s['size'] for s in nobits), default=text_end)
+    text_end = text_start + len(img)
     if bss_start < text_end: bss_start = text_end          # a .data/.bss overlap is just zeros
     bss_size = max(0, bss_end - bss_start)
     nscns = 2
-    E = '>' if a.xcoff_be else '<'
     hdr_size = 20 + 72 + 40 * nscns
     text_ptr = hdr_size
     # file header: magic 0x01DF (U802TOCMAGIC), nscns, timdat, symptr, nsyms, opthdr, flags
@@ -110,7 +117,7 @@ def write_xcoff(elf, alloc, base, a):
     # a.out header: magic 0x010B, vstamp, tsize, dsize, bsize, entry, text_start, data_start,
     # toc, snentry, sntext, sndata, sntoc, snloader, snbss, algntext, algndata, modtype,
     # cpuflag, cputype, maxstack, maxdata, debugger, then padding to 72
-    ah = struct.pack(E + 'HHIIIIIIIHHHHHHHH2sBBIII', 0x010B, 1, len(img), 0, bss_size, entry, text_start, text_end,
+    ah = struct.pack(E + 'HHIIIIIIIHHHHHHHH2sBBIII', 0x010B, 1, len(img), 0, bss_size, desc, text_start, text_end,
                      0, 1, 1, 0, 0, 0, 2, 2, 2, b'1L', 0, 0, 0, 0, 0)
     ah = ah.ljust(72, b'\0')
     def scn(name, vaddr, size, ptr, flags):
@@ -118,7 +125,7 @@ def write_xcoff(elf, alloc, base, a):
     sh = scn('.text', text_start, len(img), text_ptr, 0x0020) + scn('.bss', bss_start, bss_size, 0, 0x0080)
     out = fh + ah + sh + bytes(img)
     open(a.out, 'wb').write(out)
-    print(f'{a.out}: XCOFF ({"big" if a.xcoff_be else "little"}-endian headers), .text {text_start:#x}+{len(img):#x}, .bss {bss_start:#x}+{bss_size:#x}, entry {entry:#x}')
+    print(f'{a.out}: XCOFF ({"big" if a.xcoff_be else "little"}-endian headers), .text {text_start:#x}+{len(img):#x}, .bss {bss_start:#x}+{bss_size:#x}, entry descriptor {desc:#x} -> {entry:#x}')
 
 
 def main():
