@@ -39,7 +39,7 @@ def main():
     ap.add_argument('--out', default='build/boot-floppy.img', help='the floppy to write')
     ap.add_argument('--hal', default='build/hal.dll')
     ap.add_argument('--adb-driver', default='build/adbport.sys')
-    ap.add_argument('--arc-firmware', default='build/arcfw.exe')
+    ap.add_argument('--arc-firmware', default='build/arcfw.xcf')
     a = ap.parse_args()
 
     for path, what in ((a.hal, 'the HAL'), (a.adb_driver, 'the ADB driver'),
@@ -57,7 +57,7 @@ def main():
                '--hal', a.hal,
                '--adb-driver', a.adb_driver], 'mkbootfloppy')
     for line in out.splitlines():
-        if 'ARCFW.EXE' in line or 'bytes, FAT12' in line or 'redistributed' in line:
+        if 'ARCFW.XCF' in line or 'ARCFW.EXE' in line or 'bytes, FAT12' in line or 'redistributed' in line:
             print(f'  {line.strip()}')
 
     print(f'\n{a.out} is ready: this project\'s own firmware, HAL and driver, and nothing else.')

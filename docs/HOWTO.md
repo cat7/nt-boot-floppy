@@ -12,7 +12,7 @@ CD image at any point.
 | | |
 |---|---|
 | **The emulator** | [Granny Smith](https://github.com/pappadf/granny-smith), `main`, built with `make headless` (or `make run` for the browser). [`EMULATOR.md`](EMULATOR.md) is the setup page |
-| **The Open Firmware 2.26NT ROM** for the Network Server | MD5 `ad405e01c663340c479668c70f741f1b`, from the [TinkerDifferent thread](https://tinkerdifferent.com/threads/apple-network-server-macos-based-roms-found.4756/). It must be the **NT** ROM; the production 1.1.22 ROM cannot run NT at all |
+| **A Network Server ROM** | Either one. The **production 1.1.22 ROM** (`ans500-ans700-962f6c13.rom`, the one every Network Server shipped with) works since 6 November 2026: this project's firmware no longer depends on anything the NT ROM added. The **Open Firmware 2.26NT ROM** (MD5 `ad405e01c663340c479668c70f741f1b`, from the [TinkerDifferent thread](https://tinkerdifferent.com/threads/apple-network-server-macos-based-roms-found.4756/)) works as before. Section 8 says what differs |
 | **A Windows NT 4.0 Workstation for PowerPC CD image** | OEM 000-48303, October 1996, MD5 `ab37556d72818ed082c1d01c2d7f1898`. It is read, never written |
 | **Its Product ID** | the digits on the Certificate of Authenticity. GUI Setup will not continue without one |
 | `clang-18`, `lld-18`, `python3` | to build this repository. No Microsoft tool, header or DDK |
@@ -43,7 +43,7 @@ on the floppy are the ones Setup and the disk boot load.
 | | |
 |---|---|
 | Model | Network Server 500 (`model=ans500`) |
-| ROM | the 2.26NT ROM |
+| ROM | the production 1.1.22 ROM or the 2.26NT ROM |
 | RAM | **64 MB**. Not the 32 MB default; see below |
 | CD | your NT CD at SCSI **id 0** on the **first** fast/wide controller (`/bandit/53c825@11`) |
 | Disk | `nt-disk.img` at SCSI **id 0** on the **second** controller (`/bandit/53c825@12`) |
@@ -52,7 +52,7 @@ on the floppy are the ones Setup and the disk boot load.
 Headless:
 
 ```bash
-./build/headless/gs-headless --speed=turbo rom=<2.26NT.rom> model=ans500 ram=65536 \
+./build/headless/gs-headless --speed=turbo rom=<ans500-ans700.rom> model=ans500 ram=65536 \
       drive=scsi:0:cd:/path/to/nt4-ppc.iso drive=scsi2:0:hd:/path/to/nt-disk.img \
       fd0=/path/to/boot-floppy.img
 ```
@@ -90,7 +90,13 @@ load-base loadsize eval
 You should see the firmware load, the floppy read into RAM, and SETUPLDR start off the CD:
 
 ```
-Loading PE/COFF image_base 50000
+tsize=B288 dsize=0 bsize=61CC entry=5B280
+SECTIONS:
+.text    00050000 00050000 0000B288 000000AC
+.bss     0005B288 0005B288 000061CC 00000000
+loading .text, done..
+loading .data, done..
+clearing .bss, done..
 powermac-nt-hal: reading the OEM disk into RAM (this takes a while) .........
 powermac-nt-hal: B40 blocks of the OEM disk are in RAM
 powermac-nt-hal: starting Windows NT Setup
@@ -146,8 +152,8 @@ load fd:,\bootdisk.of
 load-base loadsize eval
 ```
 
-`bootdisk.of` loads this project's ARC firmware (`ARCFW.EXE`, built from `src/arcfw`; no
-Microsoft code runs before NT's loader), sets the ARC environment for this boot, and points the
+`bootdisk.of` loads this project's ARC firmware (`ARCFW.XCF`, built from `src/arcfw` and loaded
+by the ROM's own `xcoff-loader`; no Microsoft code runs before NT's loader), sets the ARC environment for this boot, and points the
 firmware at the disk. `Arcfw 0.1` reports what it found (it asks only SCSI target 0 and the
 targets the boot variables name; `setenv ARCFW-SCSI-TARGETS all` at the prompt makes it scan
 every id, at a selection timeout for each absent one), OSLOADER's menu shows *Windows NT
@@ -155,7 +161,13 @@ Workstation Version 4.00*, the kernel loads, the HAL comes up, and after `autoch
 wizard is drawn:
 
 ```
-Loading PE/COFF image_base 50000
+tsize=B288 dsize=0 bsize=61CC entry=5B280
+SECTIONS:
+.text    00050000 00050000 0000B288 000000AC
+.bss     0005B288 0005B288 000061CC 00000000
+loading .text, done..
+loading .data, done..
+clearing .bss, done..
 powermac-nt-hal: starting the installed Windows NT
 
 Arcfw 0.1: ARC firmware for the Apple Network Server (powermac-nt-hal)
@@ -171,7 +183,14 @@ OS Loader V4.00
 `setenv ARCFW-DEBUG 7fff` at the `0 >` prompt before the `load` makes the firmware trace every
 ARC call NT's loader makes (the tree it hands over, the memory descriptors, every `Open`, `Read`
 and `GetEnvironmentVariable`) on the serial console; `setenv ARCFW-DEBUG 0` turns it off again.
-The value is kept in NVRAM.
+The value is kept in NVRAM. The production 1.1.22 ROM's `setenv` takes only the names it knows
+(`invalid CONFIG name`); there, set it as a property instead:
+
+```forth
+dev /options  " 7fff" encode-string " ARCFW-DEBUG" property  device-end
+```
+
+which lasts until the next reset.
 
 Every page takes Enter on its default button except the three marked.
 
@@ -233,3 +252,24 @@ python3 tools/fatput.py nt-installed.img 1 '\OS\WINNT40\HAL.DLL' build/hal.dll
 Granny Smith's integration tests `ans-nt-install` and `ans-nt-installed-boot` type every line
 and key on this page unattended; `tests/integration/ans-nt-install/test.script` there is the
 authoritative, runnable form of it.
+
+## 8. The two ROMs
+
+Until 6 November 2026 this needed the 2.26NT ROM, the Open Firmware Apple built for NT: it
+starts the machine little-endian when `little-endian?` is set, and it carries `pe-loader`, which
+reads NT's PE/COFF images. The production 1.1.22 ROM has the first of those too (the `setup.of`
+step is the same on both), and the firmware now needs nothing else from a ROM:
+
+| | 1.1.22 (production) | 2.26NT |
+|---|---|---|
+| `setup.of` | `setenv little-endian? true`, `real-mode? false`, `real-base`, `load-base`, reset | the same |
+| What loads `ARCFW.XCF` | the ROM's `xcoff-loader`; `bootdisk.of`/`boot.of` claim and map its pages through `/chosen`'s `memory` and `mmu` | the same `xcoff-loader` (the 2.26NT ROM has it too) |
+| Files on the system partition | `arcfw` reads the disk raw and walks the MBR, the FAT and the directories itself (`src/arcfw/fat.c`): the ROM's `fat-files` opens `\OS\` but not `\OS\WINNT40\`, and its `sd@0,0:1` instance answers 0 bytes to every read | the same code; the ROM's packages would have worked |
+| Files on the CD | `arcfw` walks ISO 9660 itself (the ROM's `iso-9660-files` opens a file and then refuses to read it, on both ROMs) | the same |
+| `ARCFW-DEBUG` | a property on `/options` (above) | `setenv` |
+| Measured | installed NT to the desktop, Administrator logged on: 6.9 G instructions on the emulated 500 | the same, 8.3 G |
+
+The ROM's `xcoff-loader` prints the section table above where the 2.26NT ROM's `pe-loader`
+used to print `Loading PE/COFF image_base 50000`; nothing else in the transcript changes.
+(The sizes are the firmware's and move with every build.)
+
