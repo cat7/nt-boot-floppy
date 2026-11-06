@@ -18,6 +18,8 @@ typedef struct {
     BOOLEAN open;
     OF_IHANDLE ih;
     BOOLEAN console, is_file, is_cdrom;
+    BOOLEAN fat;                   /* a file this firmware found itself (fat.c): ff, not ih */
+    FAT_FILE ff;
     ULONG pos_hi, pos_lo;
     ULONG size_hi, size_lo;        /* a file's size, when known */
     CHAR pending; BOOLEAN has_pending;
@@ -32,7 +34,8 @@ VOID io_init(VOID)
     fds[1].open = TRUE; fds[1].console = TRUE; fds[1].ih = of_stdout; strcpy(fds[1].path, "stdout");
 }
 
-static ARC_STATUS of_path_for(const CHAR *arcpath, CHAR *ofpath, ULONG len, BOOLEAN *is_file, BOOLEAN *is_cdrom, BOOLEAN *console)
+static ARC_STATUS of_path_for(const CHAR *arcpath, CHAR *ofpath, ULONG len, BOOLEAN *is_file, BOOLEAN *is_cdrom, BOOLEAN *console,
+                              const CHAR **devpath, PULONG part, const CHAR **file)
 {
     const CHAR *rest;
     PARC_NODE n = config_lookup(arcpath, &rest);
@@ -42,6 +45,7 @@ static ARC_STATUS of_path_for(const CHAR *arcpath, CHAR *ofpath, ULONG len, BOOL
     ULONG partition = 0; BOOLEAN have_part = FALSE;
     const CHAR *p = rest;
     if (strncasecmp(p, "partition(", 10) == 0) { p += 10; partition = atoul(p, &p); if (*p == ')') p++; have_part = TRUE; }
+    *devpath = n->OfPath; *part = partition; *file = p;
     CONFIGURATION_TYPE t = n->Component.Type;
     /* the peripheral's controller is where the device lives; both share the OF path */
     if (t == SerialController || t == LinePeripheral) {
@@ -69,9 +73,25 @@ ARC_STATUS io_open(const CHAR *path, OPEN_MODE mode, PULONG fd)
     if (i == MAX_FD) return EMFILE;
     FD *f = &fds[i];
     memset(f, 0, sizeof *f);
-    ARC_STATUS s = of_path_for(path, f->path, sizeof f->path, &f->is_file, &f->is_cdrom, &f->console);
+    const CHAR *devpath, *file; ULONG part;
+    ARC_STATUS s = of_path_for(path, f->path, sizeof f->path, &f->is_file, &f->is_cdrom, &f->console, &devpath, &part, &file);
     DBG(DBG_IO, "arcfw: Open('%s' mode %u) -> %s", path, mode, s == ESUCCESS ? f->path : "ENODEV");
     if (s != ESUCCESS) { DBG(DBG_IO, "\n"); return s; }
+    if (f->is_file && !f->is_cdrom && mode == ArcOpenReadOnly) {
+        /* a file on a disk: this firmware's own FAT walk over the whole disk (fat.c says why),
+         * and only if that fails the ROM's fat-files package at f->path */
+        CHAR dev[160];
+        con_snprintf(dev, sizeof dev, "%s:0", devpath);
+        s = fat_open(dev, part, file, &f->ff);
+        if (s != ESUCCESS) s = fat_open(devpath, part, file, &f->ff);
+        if (s == ESUCCESS) {
+            f->fat = TRUE; f->open = TRUE; f->size_lo = f->ff.size;
+            *fd = i;
+            DBG(DBG_IO, " fd %u (FAT, %u bytes)\n", i, f->ff.size);
+            return ESUCCESS;
+        }
+        DBG(DBG_IO, " (no FAT walk: %u)", s);
+    }
     f->ih = of_open(f->path);
     if (!f->ih) { DBG(DBG_IO, " (open failed)\n"); return ENOENT; }
     f->open = TRUE;
@@ -84,7 +104,7 @@ ARC_STATUS io_open(const CHAR *path, OPEN_MODE mode, PULONG fd)
 ARC_STATUS io_close(ULONG fd)
 {
     if (fd >= MAX_FD || !fds[fd].open) return EBADF;
-    if (fd >= 2) { of_close(fds[fd].ih); fds[fd].open = FALSE; }
+    if (fd >= 2) { if (fds[fd].fat) fat_close(&fds[fd].ff); else of_close(fds[fd].ih); fds[fd].open = FALSE; }
     DBG(DBG_IO, "arcfw: Close(%u)\n", fd);
     return ESUCCESS;
 }
@@ -113,6 +133,13 @@ ARC_STATUS io_read(ULONG fd, PVOID buf, ULONG n, PULONG count)
         *count = got;
         return ESUCCESS;
     }
+    if (f->fat) {
+        ARC_STATUS s = fat_read(&f->ff, f->pos_lo, buf, n, count);
+        DBG(DBG_RW, "arcfw: Read(%u, %u) at %08x -> %u (FAT, %u)\n", fd, n, f->pos_lo, *count, s);
+        if (s != ESUCCESS) return s;
+        advance(f, *count);
+        return ESUCCESS;
+    }
     LONG r = of_read(f->ih, buf, n);
     DBG(DBG_RW, "arcfw: Read(%u, %u) at %x:%08x -> %d\n", fd, n, f->pos_hi, f->pos_lo, r);
     if (r < 0) return EIO;
@@ -125,6 +152,7 @@ ARC_STATUS io_write(ULONG fd, const VOID *buf, ULONG n, PULONG count)
 {
     if (fd >= MAX_FD || !fds[fd].open) return EBADF;
     FD *f = &fds[fd];
+    if (f->fat) { *count = 0; return EROFS; }
     LONG r = of_write(f->ih, buf, n);
     if (r < 0) { *count = 0; return EIO; }
     if (!f->console) advance(f, (ULONG)r);
@@ -140,6 +168,7 @@ ARC_STATUS io_seek(ULONG fd, LARGE_INTEGER *off, SEEK_MODE mode)
     ULONG hi = (ULONG)off->HighPart, lo = off->LowPart;
     if (mode == SeekRelative) { ULONG nlo = f->pos_lo + lo; hi += f->pos_hi + (nlo < lo ? 1 : 0); lo = nlo; }
     DBG(DBG_RW, "arcfw: Seek(%u) to %x:%08x\n", fd, hi, lo);
+    if (f->fat) { if (hi) return EIO; f->pos_hi = 0; f->pos_lo = lo; return ESUCCESS; }
     if (of_seek(f->ih, hi, lo) >= 0) { f->pos_hi = hi; f->pos_lo = lo; return ESUCCESS; }
     if (!f->is_file || hi) return EIO;
     /* Open Firmware's iso-9660-files package has no seek (its FAT package has): measured

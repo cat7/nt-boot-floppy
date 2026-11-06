@@ -236,6 +236,21 @@ ARC_STATUS io_read(ULONG fd, PVOID buf, ULONG n, PULONG count);
 ARC_STATUS io_write(ULONG fd, const VOID *buf, ULONG n, PULONG count);
 ARC_STATUS io_seek(ULONG fd, LARGE_INTEGER *off, SEEK_MODE mode);
 ARC_STATUS io_open_iso_file(const CHAR *arcpath, PULONG fd, PULONG offset, PULONG size);   /* a CD file, raw */
+
+/* fat.c: a file on a FAT partition, read raw (the ROM's fat-files package stops one directory down) */
+typedef struct {
+    ULONG dev;                       /* the whole disk, an Open Firmware instance */
+    ULONG part_lba;                  /* the partition's first sector on the disk */
+    ULONG bps, spc;                  /* bytes per sector, sectors per cluster */
+    ULONG fat_sec, root_sec, root_secs, data_sec, nclus, root_clus;
+    UCHAR bits;                      /* 12, 16 or 32 */
+    ULONG first, size;               /* the file */
+    ULONG cur_idx, cur_clus;         /* where the last read left the chain walk */
+    ULONG cache_sec; UCHAR cache[512] __attribute__((aligned(16)));
+} FAT_FILE;
+ARC_STATUS fat_open(const CHAR *devpath, ULONG part, const CHAR *file, FAT_FILE *ff);
+ARC_STATUS fat_read(FAT_FILE *ff, ULONG pos, VOID *buf, ULONG n, PULONG got);
+VOID fat_close(FAT_FILE *ff);
 ARC_STATUS io_get_read_status(ULONG fd);
 ARC_STATUS io_get_file_information(ULONG fd, PFILE_INFORMATION fi);
 
