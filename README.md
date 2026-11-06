@@ -91,8 +91,13 @@ NT's own `cirrus.sys`, `symc810.sys` and this HAL.
 
 A tag `v*` runs [`release.yml`](.github/workflows/release.yml): it builds everything, lays out
 the floppy, checks that nothing of Microsoft's is on it and that it rebuilds byte for byte, and
-publishes the image, the three binaries and their checksums as a GitHub Release and on GitHub
+publishes the image, the binaries and their checksums as a GitHub Release and on GitHub
 Pages (with this HOWTO; the repository's Pages source must be set to *GitHub Actions* once).
+Every release keeps its own page for good: `https://pappadf.github.io/powermac-nt-hal/v1.0/`
+stays v1.0's, with that tag's HOWTO and files, after v1.1 or v2.0. The root shows the newest
+release and lists them all, and `download/` keeps every release's versioned files at the
+addresses v1.0 first published them under. Each deployment rebuilds the whole site from the
+Releases and the tags (`tools/mkpages.py`), so nothing depends on an earlier deployment.
 Every push builds the same floppy as a CI artifact ([`build.yml`](.github/workflows/build.yml)).
 
 ## What is here

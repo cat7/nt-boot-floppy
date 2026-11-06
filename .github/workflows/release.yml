@@ -8,6 +8,13 @@
 # Runs on a version tag (v1.0, v1.0.1, ...), pushed with git or made on the Releases page, or
 # by hand.  Pages needs the repository's Pages source set to "GitHub Actions" once (Settings >
 # Pages); until then the Pages job fails and the Release still goes out.
+#
+# The Pages site keeps every release: https://<owner>.github.io/<repo>/vX.Y/ is that release's
+# page for good, the root is the newest one with the list of all.  A deployment replaces the
+# whole site, so the pages job rebuilds it every time from what persists -- each published
+# Release's assets and each tag's docs/HOWTO.md (tools/mkpages.py) -- never from the previous
+# deployment.  A run by hand off a branch publishes no new release and rebuilds the site from
+# the existing ones (a repair); its own build is not put on it.
 name: release
 
 on:
@@ -58,7 +65,7 @@ jobs:
           for e in 'VENEER  EXE' 'VENEERD EXE' 'SETUPLDR   ' 'CIRRUS  SYS' 'CIRRUS  DLL' 'I8042PRTSYS'; do
             ! grep -aq "$e" build/boot-floppy.img || { echo "$e is on the floppy"; exit 1; }
           done
-          for e in 'ARCFW   EXE' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
+          for e in 'ARCFW   XCF' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
             grep -aq "$e" build/boot-floppy.img || { echo "$e is missing from the floppy"; exit 1; }
           done
 
@@ -124,19 +131,57 @@ jobs:
           fi
 
   pages:
-    needs: build
+    needs: [build, release]
+    # after the Release on a tag (the site is built from the Releases), alone on a run by hand
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     runs-on: ubuntu-24.04
+    # one deployment at a time: two tags pushed together must not race each other's site
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # every tag, for each release's own HOWTO
       - uses: actions/download-artifact@v4
         with:
           name: dist
-          path: site/download
-      - name: The page
-        run: python3 tools/mkpages.py --version "${{ needs.build.outputs.version }}" --out site
+          path: dist
+      # Every published Release (drafts are not), each with its assets and the HOWTO as of its
+      # tag.  This run's own release comes from this run's build, which is what it uploaded.
+      - name: Gather every release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          v="${{ needs.build.outputs.version }}"
+          mkdir -p versions
+          gh release list --limit 1000 --exclude-drafts --json tagName,isPrerelease,publishedAt \
+            --jq '.[] | [.tagName, (.isPrerelease|tostring), (.publishedAt // "")[0:10]] | @tsv' > releases.tsv
+          if [ "${GITHUB_REF_TYPE}" = tag ] && ! cut -f1 releases.tsv | grep -qx "$v"; then
+            printf '%s\tfalse\t%s\n' "$v" "$(date -u +%F)" >> releases.tsv
+          fi
+          while IFS="$(printf '\t')" read -r tag pre date; do
+            case "$tag" in v*) ;; *) echo "skipping $tag: not a v* tag"; continue ;; esac
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "skipping $tag: no such tag"; continue
+            fi
+            d="versions/$tag"
+            mkdir -p "$d/download"
+            if [ "$tag" = "$v" ]; then
+              cp dist/* "$d/download/"
+            else
+              gh release download "$tag" --dir "$d/download"
+            fi
+            git show "$tag:docs/HOWTO.md" > "$d/HOWTO.md"
+            printf '{"prerelease": %s, "date": "%s"}\n' "$pre" "$date" > "$d/meta.json"
+            echo "$tag: $(ls "$d/download" | wc -l) files"
+          done < releases.tsv
+      - name: The site
+        run: python3 tools/mkpages.py --versions versions --out site
       # The artifact is named per attempt: a re-run of this job after a failed deployment
       # (Pages not enabled yet, or its environment rule not allowing tags) uploads again, and
       # deploy-pages refuses a run holding two artifacts of one name (v1.0, attempt 3).
