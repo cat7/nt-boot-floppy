@@ -163,6 +163,8 @@ ULONG HalGetDmaAlignmentRequirement(VOID)
  * Sweeping the data cache around every DMA was tried too, on the theory that a dirty line could
  * reach the disk stale (STORY.md wall 50).  It changed nothing: Bandit is coherent with the
  * 604, as the file header says, and the corruption had another cause entirely. */
+#define HALP_KSEG0_SIZE 0x00800000u
+
 VOID HalFlushIoBuffers(PMDL Mdl, BOOLEAN ReadOperation, BOOLEAN DmaOperation)
 {
     UNREFERENCED_PARAMETER(DmaOperation);
@@ -170,6 +172,11 @@ VOID HalFlushIoBuffers(PMDL Mdl, BOOLEAN ReadOperation, BOOLEAN DmaOperation)
     PULONG pages = (PULONG)(Mdl + 1);
     ULONG npages = (Mdl->ByteOffset + Mdl->ByteCount + 4095) >> 12;
     for (ULONG i = 0; i < npages; i++) {
+        /* KSEG0 (DBAT0) maps only the first 8 MB; dcbf/icbi above it take a DSI */
+        if (pages[i] >= (HALP_KSEG0_SIZE >> 12)) {
+            HalSweepIcache();
+            return;
+        }
         PVOID va = (PVOID)(0x80000000u + (pages[i] << 12));   /* KSEG0 */
         HalSweepDcacheRange(va, 4096);
         HalSweepIcacheRange(va, 4096);
