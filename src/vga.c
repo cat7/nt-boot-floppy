@@ -59,6 +59,11 @@ static VOID HalpVgaMode640x480x8(VOID)
      * only: headless runs had the OF console on ttya, so OF never touched the card).  Clear
      * only bit 6; the rest of the register is OF's business. */
     Seq(0x17, (UCHAR)(SeqRead(0x17) & ~0x40u));
+    /* SR15 is a scratch register (TRM 9.11) in which a PC's video BIOS records the memory size
+     * (2 = 1 MB); cirrus.sys sizes the frame buffer from its bits 3:0, and zero leaves it no
+     * modes.  Open Firmware's Cirrus driver writes it 0 whenever the console is on the screen.
+     * The 54M30 carries 1 MB. */
+    Seq(0x15, (UCHAR)((SeqRead(0x15) & 0xF0u) | 0x02u));
     Seq(0x01, 0x01);   /* 8 dots per character clock */
     Seq(0x07, 0x01);   /* extended packed-pixel mode, 8 bpp */
     Seq(0x04, 0x0E);   /* chain-4, no odd/even: a flat byte-per-pixel map */
